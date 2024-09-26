@@ -1,0 +1,3 @@
+[submodule "ext/libevpl"]
+	path = ext/libevpl
+	url = https://github.com/chimera-nas/libevpl.git
