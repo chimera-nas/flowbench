@@ -45,7 +45,8 @@ struct flowbench_config {
     const char                 *peer;
     int                         peer_port;
     uint64_t                    msg_size;
-    uint64_t                    max_inflight;
+    uint64_t                    max_inflight_bytes;
+    uint64_t                    max_inflight_msgs;
     uint64_t                    duration;
 };
 

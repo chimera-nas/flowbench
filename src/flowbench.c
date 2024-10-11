@@ -2,17 +2,36 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <unistd.h>
+#include <pthread.h>
+
+#include "utlist.h"
 
 #include "config.h"
 #include "common.h"
+#include "stats.h"
+#include "ui.h"
+
 #include "framework_evpl.h"
+
+int SigInt = 0;
+
+void sigint_handler(int signo) {
+    SigInt = 1;
+}
 
 int main(int argc, char *argv[])
 {
     struct flowbench_config config;
+    struct flowbench_stats stats;
+    void *framework_private;
     char *ch;
-    int opt, rc;
+    int opt;
+    struct timespec start_time, now;
+    uint64_t elapsed;
+
+    signal(SIGINT, sigint_handler);
 
     config.framework = FLOWBENCH_FRAMEWORK_EVPL;
     config.role = FLOWBENCH_ROLE_SERVER;
@@ -24,10 +43,11 @@ int main(int argc, char *argv[])
     config.peer = "127.0.0.1";
     config.peer_port = 32500;
     config.msg_size = 65536;
-    config.max_inflight = 512*1024;
+    config.max_inflight_bytes = 1*1024*1024;
+    config.max_inflight_msgs  = 64;
     config.duration = 10UL * 1000000000UL;;
 
-    while ((opt = getopt(argc, argv, "a:f:l:m:r:p:s:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "a:d:f:l:m:r:p:s:t:")) != -1) {
         switch (opt) {
         case 'a':
 
@@ -39,6 +59,9 @@ int main(int argc, char *argv[])
             }
 
             config.peer = optarg;
+            break;
+        case 'd':
+            config.duration = atoi(optarg) * 1000000000UL;
             break;
         case 'f':
             config.framework = map_framework(optarg);
@@ -98,14 +121,66 @@ int main(int argc, char *argv[])
         }
     }
 
+    fprintf(stderr,"Starting workload...\n");
+    memset(&stats, 0, sizeof(stats));
+
+    pthread_mutex_init(&stats.lock, NULL);
+
     switch (config.framework) {
     case FLOWBENCH_FRAMEWORK_EVPL:
-        rc = run_evpl(&config);
+        framework_private = flowbench_evpl_start(&config, &stats);
         break;
     default:
-        rc = -1;
+        framework_private = NULL;
     }
 
-    return rc;
+    if (!framework_private) {
+        fprintf(stderr,"Failed to initialize framework.\n");
+        return 1;
+    }
+
+    switch (config.role) {
+    case FLOWBENCH_ROLE_SERVER:
+        fprintf(stderr,"Running in server mode.\n");
+        while (!SigInt) {
+            sleep(1);
+        }
+        fprintf(stderr,"Exiting...\n");
+        break;
+    case FLOWBENCH_ROLE_CLIENT:
+
+        fprintf(stderr,"Waiting for warmup period...\n");
+        //sleep(1);
+
+        ui_init(250);
+        
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+        do {
+            clock_gettime(CLOCK_MONOTONIC, &now);
+
+            elapsed = ts_interval(&now, &start_time);
+
+            ui_update(&stats);
+
+        } while (elapsed < config.duration && !SigInt);
+
+        ui_cleanup();
+
+        ui_print_stats(&stats, elapsed);
+
+        break;
+    default:
+        abort();
+    }
+
+    switch (config.framework) {
+    case FLOWBENCH_FRAMEWORK_EVPL:
+        flowbench_evpl_stop(framework_private);
+        break;
+    default:
+    }
+
+    return 0;
 }
 
