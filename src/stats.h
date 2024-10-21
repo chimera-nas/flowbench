@@ -144,3 +144,30 @@ flowbench_flow_add_sent_bytes(
     stat_window_add(&flow->sent_bytes_window, now, bytes);
 }
 
+static void
+flowbench_clear_stats(
+    struct flowbench_stats *stats)
+{
+    struct flowbench_flow *flow;
+
+    pthread_mutex_lock(&stats->lock);
+    memset(&stats->saved, 0, sizeof(stats->saved));
+
+    DL_FOREACH(stats->flows, flow) {
+        stat_window_init(&flow->recv_bytes_window);
+        stat_window_init(&flow->sent_bytes_window);
+
+        flow->sent_msgs = 0;
+        flow->sent_bytes = 0;
+        flow->recv_msgs = 0;
+        flow->recv_bytes = 0;
+
+        flow->min_latency = 0;
+        flow->max_latency = 0;
+        flow->total_latency = 0;
+        flow->latency_samples = 0;
+
+    }
+
+    pthread_mutex_unlock(&stats->lock);
+}

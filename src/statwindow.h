@@ -17,6 +17,7 @@ static inline void
 stat_window_init(struct stat_window *sw)
 {
     memset(sw, 0, sizeof(*sw));
+    clock_gettime(CLOCK_MONOTONIC, &sw->bucket_start);
 }
 
 static inline void
@@ -29,9 +30,14 @@ stat_window_add(
 
     delta = ts_interval(current_time, &sw->bucket_start);
 
-    if (delta > STAT_WINDOW_BUCKET_INTERVAL) {
+    while (delta > STAT_WINDOW_BUCKET_INTERVAL) {
 
-        sw->bucket_start = *current_time;
+        sw->bucket_start.tv_nsec += STAT_WINDOW_BUCKET_INTERVAL;
+        if (sw->bucket_start.tv_nsec > 1000000000UL) {
+            sw->bucket_start.tv_sec++;
+            sw->bucket_start.tv_nsec -= 1000000000UL;
+        }
+
         sw->current++;
 
         if (sw->current == STAT_WINDOW_NUM_BUCKETS) {
@@ -40,6 +46,8 @@ stat_window_add(
     
         sw->count -= sw->buckets[sw->current];
         sw->buckets[sw->current] = 0;
+
+        delta = ts_interval(current_time, &sw->bucket_start);
     }
 
     sw->buckets[sw->current] += value; 

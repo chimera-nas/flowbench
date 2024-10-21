@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
-enum flowbench_framework {
+enum flowbench_framework_id {
     FLOWBENCH_FRAMEWORK_INVALID = 0,
     FLOWBENCH_FRAMEWORK_EVPL    = 1,
 };
@@ -25,7 +25,8 @@ enum flowbench_protocol {
     FLOWBENCH_PROTO_TCP = 1,
     FLOWBENCH_PROTO_UDP = 2,
     FLOWBENCH_PROTO_RDMACM_RC = 3,
-    FLOWBENCH_PROTO_RDMACM_UD = 4
+    FLOWBENCH_PROTO_RDMACM_UD = 4,
+    FLOWBENCH_PROTO_XLIO_TCP = 5
 };
 
 enum flowbench_test {
@@ -35,22 +36,27 @@ enum flowbench_test {
 };
 
 struct flowbench_config {
-    enum flowbench_framework    framework;
+    enum flowbench_framework_id framework_id;
     enum flowbench_role         role;
     enum flowbench_mode         mode;
     enum flowbench_protocol     protocol;
     enum flowbench_test         test;
+    int                         interactive;
+    int                         bidirectional;
+    int                         reverse;
     const char                 *local;
     int                         local_port;
     const char                 *peer;
     int                         peer_port;
+    int                         num_threads;
+    int                         num_flows;
     uint64_t                    msg_size;
     uint64_t                    max_inflight_bytes;
     uint64_t                    max_inflight_msgs;
     uint64_t                    duration;
 };
 
-static enum flowbench_framework
+static enum flowbench_framework_id
 map_framework(const char *name)
 {
     if (strcmp(name,"evpl") == 0) {
@@ -104,6 +110,10 @@ map_protocol(const char *name)
 
     if (strcmp(name,"rdmacm_rc") == 0) {
         return FLOWBENCH_PROTO_RDMACM_RC;
+    }
+
+    if (strcmp(name,"xlio_tcp") == 0) {
+        return FLOWBENCH_PROTO_XLIO_TCP;
     }
 
     return FLOWBENCH_PROTO_INVALID;

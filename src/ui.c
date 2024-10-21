@@ -188,14 +188,5 @@ void
 ui_print_stats(
     struct flowbench_stats *stats, uint64_t duration)
 {
-    struct flowbench_flow *flow;
-
-    pthread_mutex_lock(&stats->lock);
-
-    DL_FOREACH(stats->flows, flow) {
-        ui_print_flow(flow, duration);
-    }
-
-    pthread_mutex_unlock(&stats->lock);
-
+    ui_print_flow(&stats->saved, duration);
 }

@@ -13,7 +13,9 @@
 #include "stats.h"
 #include "ui.h"
 
-#include "framework_evpl.h"
+#include "framework.h"
+
+extern struct flowbench_framework framework_evpl;
 
 int SigInt = 0;
 
@@ -25,29 +27,36 @@ int main(int argc, char *argv[])
 {
     struct flowbench_config config;
     struct flowbench_stats stats;
+    struct flowbench_event *event;
+    struct flowbench_framework *framework;
     void *framework_private;
     char *ch;
     int opt;
-    struct timespec start_time, now;
+    struct timespec start_time, end_time, now;
     uint64_t elapsed;
 
     signal(SIGINT, sigint_handler);
 
-    config.framework = FLOWBENCH_FRAMEWORK_EVPL;
+    config.framework_id = FLOWBENCH_FRAMEWORK_EVPL;
     config.role = FLOWBENCH_ROLE_SERVER;
     config.mode = FLOWBENCH_MODE_MSG;
     config.protocol = FLOWBENCH_PROTO_TCP;
     config.test = FLOWBENCH_TEST_THROUGHPUT;
+    config.interactive = 1;
+    config.bidirectional =0;
+    config.reverse = 0;
     config.local = "0.0.0.0";
     config.local_port = 32500;
     config.peer = "127.0.0.1";
     config.peer_port = 32500;
+    config.num_threads = 1;
+    config.num_flows = 1;
     config.msg_size = 65536;
     config.max_inflight_bytes = 1*1024*1024;
     config.max_inflight_msgs  = 64;
     config.duration = 10UL * 1000000000UL;;
 
-    while ((opt = getopt(argc, argv, "a:d:f:l:m:r:p:s:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "a:Bd:f:l:m:n:r:Rp:P:qs:t:")) != -1) {
         switch (opt) {
         case 'a':
 
@@ -60,12 +69,15 @@ int main(int argc, char *argv[])
 
             config.peer = optarg;
             break;
+        case 'B':
+            config.bidirectional = 1;
+            break;
         case 'd':
             config.duration = atoi(optarg) * 1000000000UL;
             break;
         case 'f':
-            config.framework = map_framework(optarg);
-            if (config.framework == FLOWBENCH_FRAMEWORK_INVALID) {
+            config.framework_id = map_framework(optarg);
+            if (config.framework_id == FLOWBENCH_FRAMEWORK_INVALID) {
                 fprintf(stderr,"Invalid framework '%s'\n", optarg);
                 return 1;
             }  
@@ -88,6 +100,9 @@ int main(int argc, char *argv[])
                 return 1;
             }
             break;
+        case 'n':
+            config.num_flows = atoi(optarg);
+            break;
         case 'r':
             config.role = map_role(optarg);
             if (config.role == FLOWBENCH_ROLE_INVALID) {
@@ -95,12 +110,21 @@ int main(int argc, char *argv[])
                 return 1;
             }
             break;
+        case 'R':
+            config.reverse = 1;
+            break;
         case 'p':
             config.protocol = map_protocol(optarg);
             if (config.protocol == FLOWBENCH_PROTO_INVALID) {
                 fprintf(stderr,"Invalid protocol '%s'\n", optarg);
                 return 1;
             }
+            break;
+        case 'P':
+            config.num_threads = atoi(optarg);
+            break;
+        case 'q':
+            config.interactive = 0;
             break;
         case 's':
             if (parse_size(&config.msg_size, optarg)) {
@@ -121,18 +145,22 @@ int main(int argc, char *argv[])
         }
     }
 
-    fprintf(stderr,"Starting workload...\n");
     memset(&stats, 0, sizeof(stats));
 
     pthread_mutex_init(&stats.lock, NULL);
 
-    switch (config.framework) {
+    switch (config.framework_id) {
     case FLOWBENCH_FRAMEWORK_EVPL:
-        framework_private = flowbench_evpl_start(&config, &stats);
+        framework = &framework_evpl;
         break;
     default:
-        framework_private = NULL;
+        fprintf(stderr,"Unknown framework %d", config.framework_id);
+        exit(1);
     }
+
+    fprintf(stderr,"Initializing...\n");
+
+    framework_private = framework->init(&config, &stats);
 
     if (!framework_private) {
         fprintf(stderr,"Failed to initialize framework.\n");
@@ -141,31 +169,74 @@ int main(int argc, char *argv[])
 
     switch (config.role) {
     case FLOWBENCH_ROLE_SERVER:
+
         fprintf(stderr,"Running in server mode.\n");
+
+        framework->start(framework_private);
+
         while (!SigInt) {
             sleep(1);
         }
-        fprintf(stderr,"Exiting...\n");
+
+        framework->stop(framework_private);
+
         break;
+
     case FLOWBENCH_ROLE_CLIENT:
 
-        fprintf(stderr,"Waiting for warmup period...\n");
-        //sleep(1);
+        fprintf(stderr,"Warming up...");
 
-        ui_init(250);
-        
+        framework->start(framework_private);
+
+        sleep(3);
+
+        framework->stop(framework_private);
+
+        while (stats.flows) {
+            usleep(100);
+        }
+
+        sleep(1);
+
+        flowbench_clear_stats(&stats);
+
+
+        if (config.interactive) {
+            ui_init(250);
+        }
+
+        fprintf(stderr,"Begin measurement...\n");
+
         clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+        framework->start(framework_private);
 
         do {
             clock_gettime(CLOCK_MONOTONIC, &now);
 
             elapsed = ts_interval(&now, &start_time);
 
-            ui_update(&stats);
+            if (config.interactive) {
+                ui_update(&stats);
+            } else {
+                usleep(1000);
+            }
 
         } while (elapsed < config.duration && !SigInt);
 
-        ui_cleanup();
+        framework->stop(framework_private);
+
+        while (stats.flows) {
+            usleep(1);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+        elapsed = ts_interval(&end_time, &start_time);
+
+        if (config.interactive) {
+            ui_cleanup();
+        }
 
         ui_print_stats(&stats, elapsed);
 
@@ -174,11 +245,13 @@ int main(int argc, char *argv[])
         abort();
     }
 
-    switch (config.framework) {
-    case FLOWBENCH_FRAMEWORK_EVPL:
-        flowbench_evpl_stop(framework_private);
-        break;
-    default:
+   
+    framework->cleanup(framework_private);
+
+    while (stats.events) {
+        event = stats.events;
+        DL_DELETE(stats.events, event);
+        free(event);
     }
 
     return 0;
