@@ -26,7 +26,7 @@ struct flowbench_evpl_flow {
     int         	ping;
     struct timespec	ping_time;
 
-    struct evpl_bvec    bvec;
+    struct evpl_iovec    iovec;
 
     struct flowbench_evpl_flow *prev;
     struct flowbench_evpl_flow *next;
@@ -55,7 +55,7 @@ close_flow(
     struct evpl *evpl,
     struct flowbench_evpl_flow *flow)
 {
-    evpl_bvec_release(evpl, &flow->bvec);
+    evpl_iovec_release(&flow->iovec);
 }
 
 static int
@@ -118,12 +118,12 @@ flow_dispatch_callback(
 	    clock_gettime(CLOCK_MONOTONIC, &flow->ping_time);
         }
 
-        evpl_bvec_addref(evpl, &flow->bvec);
+        evpl_iovec_addref(&flow->iovec);
 
         if (flow->state->connected) {
-            evpl_sendv(evpl, flow->bind, &flow->bvec, 1, config->msg_size);
+            evpl_sendv(evpl, flow->bind, &flow->iovec, 1, config->msg_size);
         } else {
-            evpl_sendtoepv(evpl, flow->bind, state->remote, &flow->bvec, 1, config->msg_size);
+            evpl_sendtoepv(evpl, flow->bind, state->remote, &flow->iovec, 1, config->msg_size);
         }
 
         flow->inflight_bytes += config->msg_size;
@@ -144,9 +144,9 @@ notify_callback(
     struct flowbench_evpl_flow *flow = private_data;
     struct flowbench_evpl_state *state = flow->state;
     const struct flowbench_config *config = flow->config;
-    struct evpl_bvec bvecs[8];
+    struct evpl_iovec iovecs[8];
     struct timespec now;
-    int nbvecs, i;
+    int niovecs, i;
 
     clock_gettime(CLOCK_MONOTONIC, &now);
 
@@ -161,6 +161,7 @@ notify_callback(
         flowbench_remove_flow(state->stats, &flow->stats);
         evpl_destroy_uevent(evpl, flow->dispatch);
         DL_DELETE(state->flows, flow);
+        close_flow(evpl, flow);
         free(flow);
         break;
     case EVPL_NOTIFY_SENT:
@@ -173,14 +174,14 @@ notify_callback(
     case EVPL_NOTIFY_RECV_DATA:
         do {
 
-            nbvecs = evpl_readv(evpl, flow->bind, bvecs, 8, 4*1024*1024);
+            niovecs = evpl_readv(evpl, flow->bind, iovecs, 8, 4*1024*1024);
 
-            for (i = 0; i < nbvecs; ++i) {
-                flowbench_flow_add_recv_bytes(&flow->stats, &now, evpl_bvec_length(&bvecs[i]));
-                evpl_bvec_release(evpl, &bvecs[i]);
+            for (i = 0; i < niovecs; ++i) {
+                flowbench_flow_add_recv_bytes(&flow->stats, &now, evpl_iovec_length(&iovecs[i]));
+                evpl_iovec_release(&iovecs[i]);
             }
 
-        } while (nbvecs);
+        } while (niovecs);
         break;
     case EVPL_NOTIFY_RECV_MSG:
         flowbench_flow_add_recv_bytes(&flow->stats, &now, notify->recv_msg.length);
@@ -195,14 +196,14 @@ notify_callback(
                 evpl_arm_uevent(state->evpl, flow->dispatch);
             } else {
     
-                evpl_bvec_addref(evpl, &flow->bvec);
+                evpl_iovec_addref(&flow->iovec);
 
                 if (flow->state->connected) {
                     evpl_sendv(evpl, flow->bind,
-                               &flow->bvec, 1, notify->recv_msg.length);
+                               &flow->iovec, 1, notify->recv_msg.length);
                 } else {
                     evpl_sendtov(evpl, flow->bind, notify->recv_msg.addr,
-                                 &flow->bvec, 1, notify->recv_msg.length);
+                                 &flow->iovec, 1, notify->recv_msg.length);
                 }
             }
         }
@@ -229,7 +230,7 @@ create_flow(
     flow->state  = state;
     flow->config = state->config;
 
-    evpl_bvec_alloc(state->evpl, state->config->msg_size, 4096, 1, &flow->bvec);
+    evpl_iovec_alloc(state->evpl, state->config->msg_size, 4096, 1, &flow->iovec);
 
     flowbench_add_flow(state->stats, &flow->stats);
 
@@ -272,7 +273,7 @@ accept_callback(
     DL_APPEND(state->flows, flow);
 } /* accept_callback */
 
-static void
+static void *
 flowbench_evpl_thread_init(
     struct evpl *evpl,
     void *private_data)
@@ -301,7 +302,7 @@ flowbench_evpl_thread_init(
             break;
         default:
             state->error = 1;
-            return;
+            return state;
         }
         break;
 
@@ -334,12 +335,12 @@ flowbench_evpl_thread_init(
             break;
         default:
             state->error = 1;
-            return;
+            return state;
         }
         break;
     default:
         state->error = 1;
-        return;
+        return state;
     }
 
     state->client = (config->role == FLOWBENCH_ROLE_CLIENT);
@@ -356,6 +357,8 @@ flowbench_evpl_thread_init(
     default:
         break;
     }
+
+    return state;
 }
 
 void
@@ -417,7 +420,7 @@ flowbench_evpl_thread_stop(
     struct flowbench_evpl_flow *flow;
 
     DL_FOREACH(state->flows, flow) {
-        evpl_disconnect(state->evpl, flow->bind);
+        evpl_close(state->evpl, flow->bind);
     }
 }
 
@@ -457,7 +460,7 @@ flowbench_evpl_init(
         state->config = config;
         state->stats = stats;
 
-        state->thread = evpl_thread_create(flowbench_evpl_thread_init, flowbench_evpl_thread_wake, state);
+        state->thread = evpl_thread_create(flowbench_evpl_thread_init, flowbench_evpl_thread_wake, NULL, NULL, -1, state);
 
     }
 

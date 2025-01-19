@@ -1,1 +1,4 @@
 build
+*.diff
+*.log
+cscope.out
