@@ -24,7 +24,7 @@ endif()
 
 add_definitions(-g -Wall -Werror -Wno-unused-function)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ext/libevpl/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ext/libevpl/include)
 include_directories(3rdparty)
 
 add_subdirectory(ext)
