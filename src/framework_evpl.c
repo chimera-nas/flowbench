@@ -5,8 +5,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#include "core/evpl.h"
-#include "thread/thread.h"
+#include "evpl/evpl.h"
 #include "utlist.h"
 
 #include "framework.h"
