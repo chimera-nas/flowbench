@@ -27,6 +27,9 @@ RUN apt-get -y update && \
     apt-get -y --no-install-recommends upgrade && \
     apt-get -y --no-install-recommends install libuuid1 librdmacm1 libjansson4 liburcu8t64 ibverbs-providers liburing2 libunwind8 \
     libncurses6 libssl3t64 && \
+    if [ "${BUILD_TYPE}" = "Debug" ]; then \
+    apt-get -y --no-install-recommends install llvm gdb ; \
+    fi && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
