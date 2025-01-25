@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
     config.max_inflight_msgs  = 64;
     config.duration = 10UL * 1000000000UL;;
 
-    while ((opt = getopt(argc, argv, "a:Bd:f:l:m:n:r:Rp:P:qs:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "a:Bd:f:l:m:n:r:Rp:P:qs:t:v")) != -1) {
         switch (opt) {
         case 'a':
 
@@ -139,8 +139,27 @@ int main(int argc, char *argv[])
                 return 1;
             }
             break;
+        case 'v':
+            printf("flowbench version %s\n", FLOWBENCH_VERSION);
+            return 0;
         default:
-            fprintf(stderr, "Usage: %s [-s] [-c server_address]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [options]\n"
+                    "Options:\n"
+                    "  -a addr[:port]    Peer address and optional port (default: 127.0.0.1:32500)\n"
+                    "  -B                Enable bidirectional mode\n"
+                    "  -d seconds        Test duration in seconds (default: 10)\n"
+                    "  -f framework      Framework to use (default: evpl)\n"
+                    "  -l addr[:port]    Local address and optional port (default: 0.0.0.0:32500)\n"
+                    "  -m mode           Mode (default: msg)\n"
+                    "  -n num_flows      Number of flows (default: 1)\n"
+                    "  -p protocol       Protocol (default: tcp)\n"
+                    "  -P num_threads    Number of threads (default: 1)\n"
+                    "  -q                Quiet mode (disable interactive display)\n"
+                    "  -r role           Role: client or server (default: server)\n"
+                    "  -R                Reverse mode\n"
+                    "  -s size           Message size (default: 65536)\n"
+                    "  -t test           Test type (default: throughput)\n"
+                    "  -v                Show version\n", argv[0]);
             return 1;
         }
     }
