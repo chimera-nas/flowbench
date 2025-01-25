@@ -51,23 +51,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Update Docker image visibility
-        run: |
-          curl -X PATCH \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/user/packages/container/${{ github.event.repository.name }}/versions \
-            -d '{"visibility":"public"}'
-
-      - name: Set package retention
-        run: |
-          curl -X PUT \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/packages/container/${{ github.event.repository.name }}/settings" \
-            -d '{
-              "retention_days": 30,
-              "delete_on_merge": true,
-              "preserve_latest_versions": 1
-            }' 
