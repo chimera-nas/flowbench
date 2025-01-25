@@ -46,9 +46,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,format=long
-            type=ref,event=branch
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest-${{ matrix.runner }}
 
       - name: Build and push per architecture
         uses: docker/build-push-action@v5
@@ -56,8 +54,7 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}-${{ matrix.platform == 'linux/amd64' && 'linux-amd64' || 'linux-arm64' }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -80,14 +77,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,format=long
-            type=ref,event=branch
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
 
       - name: Create and push manifest
         run: |
           for tag in $(echo "${{ steps.meta.outputs.tags }}" | tr '\n' ' '); do
             docker buildx imagetools create -t $tag \
-              $tag-linux-amd64 \
-              $tag-linux-arm64
+              ${tag}-ubuntu-24.04 \
+              ${tag}-ubuntu-24.04-arm
           done
