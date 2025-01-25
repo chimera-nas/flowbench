@@ -71,7 +71,6 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             BUILD_TYPE=${{ matrix.build_type }}
-          target: flowbench-${{ matrix.tag }}
 
   merge-manifests:
     needs: build-and-push
