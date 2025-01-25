@@ -56,7 +56,8 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ${{ steps.meta.outputs.tags }}-${{ matrix.platform | replace('/', '-') }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -88,6 +89,6 @@ jobs:
         run: |
           for tag in $(echo "${{ steps.meta.outputs.tags }}" | tr '\n' ' '); do
             docker buildx imagetools create -t $tag \
-              ${tag}-linux-amd64 \
-              ${tag}-linux-arm64
+              $tag-linux-amd64 \
+              $tag-linux-arm64
           done
