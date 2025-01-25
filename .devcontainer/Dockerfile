@@ -1,8 +1,6 @@
 FROM ubuntu:24.04
 
-ARG USERNAME
-ARG USER_UID=1000
-ARG USER_GID=$USER_UID
+ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get -y update && \
     apt-get -y --no-install-recommends upgrade && \
