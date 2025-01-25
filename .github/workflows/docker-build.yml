@@ -11,7 +11,7 @@ env:
 
 jobs:
   build-and-push:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.platform }} ${{ matrix.build_type }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -21,8 +21,20 @@ jobs:
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
+            build_type: Release
+            tag: latest-amd64
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            build_type: Debug
+            tag: latest-debug-amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
+            build_type: Release
+            tag: latest-arm64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            build_type: Debug
+            tag: latest-debug-arm64
 
     steps:
       - name: Checkout repository
@@ -46,7 +58,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest-${{ matrix.runner }}
+            type=raw,value=${{ matrix.tag }}
 
       - name: Build and push per architecture
         uses: docker/build-push-action@v5
@@ -57,6 +69,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_TYPE=${{ matrix.build_type }}
+          target: flowbench-${{ matrix.tag }}
 
   merge-manifests:
     needs: build-and-push
@@ -78,11 +93,12 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
+            type=raw,value=latest-debug
 
       - name: Create and push manifest
         run: |
           for tag in $(echo "${{ steps.meta.outputs.tags }}" | tr '\n' ' '); do
             docker buildx imagetools create -t $tag \
-              ${tag}-ubuntu-24.04 \
-              ${tag}-ubuntu-24.04-arm
+                ${tag}-amd64 \
+                ${tag}-arm64
           done
