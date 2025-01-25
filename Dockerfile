@@ -1,6 +1,8 @@
 FROM ubuntu:24.04 AS build
 ARG BUILD_TYPE=Release
 
+ENV DEBIAN_FRONTEND noninteractive
+
 RUN apt-get -y update && \
     apt-get -y --no-install-recommends upgrade && \
     apt-get -y --no-install-recommends install clang cmake ninja-build git lldb gdb less psmisc \
@@ -19,6 +21,8 @@ RUN mkdir /build && \
 
 FROM ubuntu:24.04
 
+ENV DEBIAN_FRONTEND noninteractive
+
 RUN apt-get -y update && \
     apt-get -y --no-install-recommends upgrade && \
     apt-get -y --no-install-recommends install libuuid1 librdmacm1 libjansson4 liburcu8t64 ibverbs-providers liburing2 libunwind8 \
@@ -31,3 +35,5 @@ COPY --from=build /usr/local/lib/*.so /usr/local/lib/
 
 # Just so the dockerfile fails to build if we are missing libs or some such
 RUN /usr/local/bin/flowbench -v
+
+ENTRYPOINT ["/usr/local/bin/flowbench"]
