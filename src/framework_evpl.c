@@ -482,6 +482,8 @@ flowbench_evpl_init(
         evpl_config_set_huge_pages(evpl_config, 1);
     }
 
+    evpl_config_set_max_datagram_size(evpl_config, config->msg_size);
+
     evpl_init_auto(evpl_config);
 
     states = calloc(config->num_threads, sizeof(*state));
