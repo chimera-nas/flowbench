@@ -20,6 +20,7 @@ RUN mkdir /build && \
     ninja install
 
 FROM ubuntu:24.04
+ARG BUILD_TYPE=Release
 
 ENV DEBIAN_FRONTEND noninteractive
 
