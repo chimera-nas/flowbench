@@ -79,7 +79,7 @@ can_send(struct flowbench_evpl_flow *flow)
             if ((config->role == FLOWBENCH_ROLE_CLIENT && !config->reverse) ||
                 (config->role == FLOWBENCH_ROLE_SERVER && config->reverse) ||
                 config->bidirectional) {
-                if (state->stream) {
+                if (state->config->mode == FLOWBENCH_MODE_STREAM) {
                     return (flow->inflight_bytes + config->msg_size <= config->
                             max_inflight);
                 } else {

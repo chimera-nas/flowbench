@@ -1,6 +1,6 @@
 FROM ubuntu:24.04
 
-ARG ENABLE_XLIO=0
+ARG ENABLE_XLIO=1
 
 ENV DEBIAN_FRONTEND noninteractive
 

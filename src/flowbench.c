@@ -159,7 +159,10 @@ main(
                 config.num_threads = atoi(optarg);
                 break;
             case 'q':
-                config.max_inflight = atoi(optarg);
+                if (parse_size(&config.max_inflight, optarg)) {
+                    fprintf(stderr, "Invalid max inflight '%s'\n", optarg);
+                    return 1;
+                }
                 break;
             case 'Q':
                 config.interactive = 0;
@@ -190,8 +193,20 @@ main(
         if (config.mode == FLOWBENCH_MODE_MSG) {
             config.max_inflight = 64;
         } else {
-            config.max_inflight = 4 * 1024 * 1024;
+            config.max_inflight = 128 * 1024;
         }
+    }
+
+    if (config.protocol == FLOWBENCH_PROTO_UDP &&
+        config.msg_size > 65535) {
+        fprintf(stderr, "UDP protocol does not support msg size >= 64KiB\n");
+        return 1;
+    }
+
+    if (config.test == FLOWBENCH_TEST_PINGPONG &&
+        config.mode == FLOWBENCH_MODE_STREAM) {
+        fprintf(stderr, "Pingpong test does not support stream mode\n");
+        return 1;
     }
 
     memset(&stats, 0, sizeof(stats));
