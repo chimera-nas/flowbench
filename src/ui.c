@@ -96,6 +96,7 @@ display_summary(struct flowbench_stats *stats)
     char                   sent_size[20], recv_size[20], send_rate[20],
                            recv_rate[20], send_ops[20], recv_ops[20];
     uint64_t               total_recv_bytes_tp = 0, total_sent_bytes_tp = 0;
+    uint64_t               total_recv_msgs_tp = 0, total_sent_msgs_tp = 0;
     struct flowbench_flow  summary = stats->saved;
     struct flowbench_flow *flow    = stats->flows;
 
@@ -114,14 +115,19 @@ display_summary(struct flowbench_stats *stats)
 
         total_recv_bytes_tp += flow->recv_bytes_window.count;
         total_sent_bytes_tp += flow->sent_bytes_window.count;
+
+        total_recv_msgs_tp += flow->recv_msgs_window.count;
+        total_sent_msgs_tp += flow->sent_msgs_window.count;
     }
 
     ui_format_size(summary.sent_bytes, sent_size);
     ui_format_size(summary.recv_bytes, recv_size);
     ui_format_throughput(total_recv_bytes_tp, STAT_WINDOW_INTERVAL, recv_rate);
     ui_format_throughput(total_sent_bytes_tp, STAT_WINDOW_INTERVAL, send_rate);
-    ui_format_ops_per_second(summary.recv_msgs, STAT_WINDOW_INTERVAL, recv_ops);
-    ui_format_ops_per_second(summary.sent_msgs, STAT_WINDOW_INTERVAL, send_ops);
+    ui_format_ops_per_second(total_recv_msgs_tp, STAT_WINDOW_INTERVAL, recv_ops)
+    ;
+    ui_format_ops_per_second(total_sent_msgs_tp, STAT_WINDOW_INTERVAL, send_ops)
+    ;
 
     mvprintw(0, 0, "Total Bandwidth:  %s (%s), Recv: %s (%s)", sent_size,
              send_rate

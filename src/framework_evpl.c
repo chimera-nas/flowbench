@@ -16,7 +16,7 @@
 struct flowbench_evpl_flow {
     struct evpl_bind              *bind;
     struct flowbench_flow          stats;
-    struct evpl_uevent            *dispatch;
+    struct evpl_deferral           dispatch;
     const struct flowbench_config *config;
     struct flowbench_evpl_state   *state;
 
@@ -155,22 +155,20 @@ notify_callback(
 
     switch (notify->notify_type) {
         case EVPL_NOTIFY_CONNECTED:
-            evpl_arm_uevent(state->evpl, flow->dispatch);
+            evpl_defer(state->evpl, &flow->dispatch);
             break;
         case EVPL_NOTIFY_DISCONNECTED:
             flowbench_remove_flow(state->stats, &flow->stats);
-            evpl_destroy_uevent(evpl, flow->dispatch);
             DL_DELETE(state->flows, flow);
             close_flow(evpl, flow);
             free(flow);
             break;
         case EVPL_NOTIFY_SENT:
-            flowbench_flow_add_sent_bytes(&flow->stats, &now, notify->sent.bytes
-                                          );
-            flow->stats.sent_msgs += notify->sent.msgs;
-            flow->inflight_bytes  -= notify->sent.bytes;
-            flow->inflight_msgs   -= notify->sent.msgs;
-            evpl_arm_uevent(state->evpl, flow->dispatch);
+            flowbench_flow_add_sent_bytes(&flow->stats, &now, notify->sent.bytes);
+            flowbench_flow_add_sent_msgs(&flow->stats, &now, notify->sent.msgs);
+            flow->inflight_bytes -= notify->sent.bytes;
+            flow->inflight_msgs  -= notify->sent.msgs;
+            evpl_defer(state->evpl, &flow->dispatch);
             break;
         case EVPL_NOTIFY_RECV_DATA:
             do {
@@ -179,18 +177,15 @@ notify_callback(
                                      1024);
 
                 for (i = 0; i < niovecs; ++i) {
-                    flowbench_flow_add_recv_bytes(&flow->stats, &now,
-                                                  evpl_iovec_length(&iovecs[i]))
-                    ;
+                    flowbench_flow_add_recv_bytes(&flow->stats, &now, iovecs[i].length);
                     evpl_iovec_release(&iovecs[i]);
                 }
 
             } while (niovecs);
             break;
         case EVPL_NOTIFY_RECV_MSG:
-            flowbench_flow_add_recv_bytes(&flow->stats, &now, notify->recv_msg.
-                                          length);
-            flow->stats.recv_msgs++;
+            flowbench_flow_add_recv_bytes(&flow->stats, &now, notify->recv_msg.length);
+            flowbench_flow_add_recv_msgs(&flow->stats, &now, 1);
 
             if (config->test == FLOWBENCH_TEST_PINGPONG) {
 
@@ -199,7 +194,7 @@ notify_callback(
                                                ts_interval(&now, &flow->
                                                            ping_time));
                     flow->ping = 0;
-                    evpl_arm_uevent(state->evpl, flow->dispatch);
+                    evpl_defer(state->evpl, &flow->dispatch);
                 } else {
 
                     evpl_iovec_addref(&flow->iovec);
@@ -246,9 +241,9 @@ create_flow(
 
     flowbench_add_flow(state->stats, &flow->stats);
 
-    flow->dispatch = evpl_add_uevent(state->evpl, flow_dispatch_callback, flow);
+    evpl_deferral_init(&flow->dispatch, flow_dispatch_callback, flow);
 
-    evpl_arm_uevent(state->evpl, flow->dispatch);
+    evpl_defer(state->evpl, &flow->dispatch);
 
     return flow;
 } /* create_flow */
@@ -403,8 +398,7 @@ flowbench_evpl_thread_start(struct flowbench_evpl_state *state)
         case FLOWBENCH_ROLE_CLIENT:
             if (state->connected) {
 
-                if (state->stream && state->config->mode == FLOWBENCH_MODE_MSG)
-                {
+                if (state->stream && state->config->mode == FLOWBENCH_MODE_MSG) {
                     a_segment_callback = segment_callback;
                 } else {
                     a_segment_callback = NULL;
