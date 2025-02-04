@@ -24,7 +24,7 @@ struct flowbench_evpl_flow {
     uint64_t                       inflight_bytes;
     int                            ping;
     struct timespec                ping_time;
-
+    int                            connected;
     struct evpl_iovec              iovec;
 
     struct flowbench_evpl_flow    *prev;
@@ -92,7 +92,7 @@ can_send(struct flowbench_evpl_flow *flow)
             if (config->role == FLOWBENCH_ROLE_SERVER) {
                 return 0;
             } else {
-                return (flow->ping == 0);
+                return (flow->connected && flow->ping == 0);
             }
             break;
         default:
@@ -155,6 +155,7 @@ notify_callback(
 
     switch (notify->notify_type) {
         case EVPL_NOTIFY_CONNECTED:
+            flow->connected = 1;
             evpl_defer(state->evpl, &flow->dispatch);
             break;
         case EVPL_NOTIFY_DISCONNECTED:
@@ -468,17 +469,18 @@ flowbench_evpl_init(
 {
     struct flowbench_evpl_state *states, *state;
     int                          i;
-    struct evpl_config          *evpl_config;
+    struct evpl_global_config   *evpl_config;
 
-    evpl_config = evpl_config_init();
+    evpl_config = evpl_global_config_init();
 
     if (config->huge_pages) {
-        evpl_config_set_huge_pages(evpl_config, 1);
+        evpl_global_config_set_huge_pages(evpl_config, 1);
     }
 
-    evpl_config_set_max_datagram_size(evpl_config, config->msg_size);
+    evpl_global_config_set_rdmacm_srq_prefill(evpl_config, 1);
+    evpl_global_config_set_max_datagram_size(evpl_config, config->msg_size);
 
-    evpl_init_auto(evpl_config);
+    evpl_init(evpl_config);
 
     states = calloc(config->num_threads, sizeof(*state));
 
@@ -489,9 +491,10 @@ flowbench_evpl_init(
         state->config = config;
         state->stats  = stats;
 
-        state->thread = evpl_thread_create(flowbench_evpl_thread_init,
+        state->thread = evpl_thread_create(NULL,
+                                           flowbench_evpl_thread_init,
                                            flowbench_evpl_thread_wake, NULL,
-                                           NULL, -1, state);
+                                           NULL, state);
 
     }
 
