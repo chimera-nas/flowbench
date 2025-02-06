@@ -226,14 +226,17 @@ ui_print_flow(
     uint64_t               duration)
 {
     char sent_size[20], recv_size[20], send_rate[20], recv_rate[20];
+    char send_ops[20], recv_ops[20];
 
     ui_format_size(flow->sent_bytes, sent_size);
     ui_format_size(flow->recv_bytes, recv_size);
     ui_format_throughput(flow->sent_bytes, duration, send_rate);
     ui_format_throughput(flow->recv_bytes, duration, recv_rate);
+    ui_format_ops_per_second(flow->recv_msgs, duration, recv_ops);
+    ui_format_ops_per_second(flow->sent_msgs, duration, send_ops);
 
-    printf("Flow: Sent: %s (%s), Recv: %s (%s)", sent_size, send_rate, recv_size
-           , recv_rate);
+    printf("Flow: Sent: %s (%s) [%s], Recv: %s (%s) [%s]", sent_size, send_rate, send_ops, recv_size, recv_rate,
+           recv_ops);
 
     if (flow->recv_msgs > 0) {
         uint64_t avg_latency = flow->total_latency / flow->recv_msgs;
@@ -242,6 +245,7 @@ ui_print_flow(
     }
 
     printf("\n");
+    fflush(stdout);
 } /* ui_print_flow */
 
 void

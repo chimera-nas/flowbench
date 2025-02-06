@@ -191,7 +191,11 @@ main(
 
     if (config.max_inflight == 0) {
         if (config.mode == FLOWBENCH_MODE_MSG) {
-            config.max_inflight = 64;
+            if (config.test == FLOWBENCH_TEST_PINGPONG) {
+                config.max_inflight = 1;
+            } else {
+                config.max_inflight = 64;
+            }
         } else {
             config.max_inflight = 128 * 1024;
         }
@@ -248,22 +252,11 @@ main(
 
         case FLOWBENCH_ROLE_CLIENT:
 
-            fprintf(stderr, "Warming up...");
+            fprintf(stderr, "Warming up...\n");
 
             framework->start(framework_private);
 
             sleep(3);
-
-            framework->stop(framework_private);
-
-            while (stats.flows) {
-                usleep(100);
-            }
-
-            sleep(1);
-
-            flowbench_clear_stats(&stats);
-
 
             if (config.interactive) {
                 ui_init(250);
@@ -272,8 +265,7 @@ main(
             fprintf(stderr, "Begin measurement...\n");
 
             clock_gettime(CLOCK_MONOTONIC, &start_time);
-
-            framework->start(framework_private);
+            flowbench_clear_stats(&stats);
 
             do {
                 clock_gettime(CLOCK_MONOTONIC, &now);
@@ -289,10 +281,6 @@ main(
             } while (elapsed < config.duration && !SigInt);
 
             framework->stop(framework_private);
-
-            while (stats.flows) {
-                usleep(1);
-            }
 
             clock_gettime(CLOCK_MONOTONIC, &end_time);
 

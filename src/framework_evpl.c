@@ -13,6 +13,10 @@
 #include "common.h"
 #include "stats.h"
 
+#ifndef unlikely
+#define unlikely(x) __builtin_expect(!!(x), 0)
+#endif /* unlikely */
+
 struct flowbench_evpl_flow {
     struct evpl_bind              *bind;
     struct flowbench_flow          stats;
@@ -22,8 +26,12 @@ struct flowbench_evpl_flow {
 
     uint64_t                       inflight_msgs;
     uint64_t                       inflight_bytes;
-    int                            ping;
-    struct timespec                ping_time;
+    uint64_t                       inflight_pings;
+    struct timespec               *ping_times;
+    int                           *ping_slots;
+    int                            ping_head;
+    int                            ping_tail;
+    int                            ping_ring_mask;
     int                            connected;
     struct evpl_iovec              iovec;
 
@@ -41,20 +49,24 @@ struct flowbench_evpl_state {
     struct evpl_endpoint          *remote;
     struct flowbench_evpl_flow    *flows;
     enum evpl_protocol_id protocol;
-    int                            run;
-    int                            running;
     int                            error;
     int                            stream;
     int                            connected;
     int                            client;
+    int                            stopped;
 };
 
 void
-close_flow(
-    struct evpl                *evpl,
-    struct flowbench_evpl_flow *flow)
+close_flow(struct flowbench_evpl_flow *flow)
 {
     evpl_iovec_release(&flow->iovec);
+    if (flow->ping_times) {
+        free(flow->ping_times);
+    }
+    if (flow->ping_slots) {
+        free(flow->ping_slots);
+    }
+    free(flow);
 } /* close_flow */
 
 static int
@@ -80,8 +92,7 @@ can_send(struct flowbench_evpl_flow *flow)
                 (config->role == FLOWBENCH_ROLE_SERVER && config->reverse) ||
                 config->bidirectional) {
                 if (state->config->mode == FLOWBENCH_MODE_STREAM) {
-                    return (flow->inflight_bytes + config->msg_size <= config->
-                            max_inflight);
+                    return (flow->inflight_bytes + config->msg_size <= config->max_inflight);
                 } else {
                     return (flow->inflight_msgs < config->max_inflight);
                 }
@@ -92,9 +103,8 @@ can_send(struct flowbench_evpl_flow *flow)
             if (config->role == FLOWBENCH_ROLE_SERVER) {
                 return 0;
             } else {
-                return (flow->connected && flow->ping == 0);
+                return (flow->connected && flow->inflight_pings < config->max_inflight);
             }
-            break;
         default:
             return 0;
     } /* switch */
@@ -109,15 +119,16 @@ flow_dispatch_callback(
     struct flowbench_evpl_state   *state  = flow->state;
     const struct flowbench_config *config = flow->config;
 
-    if (flow->bind == NULL) {
+    if (unlikely(flow->bind == NULL)) {
         return;
     }
 
     while (can_send(flow)) {
-
         if (config->test == FLOWBENCH_TEST_PINGPONG) {
-            flow->ping = 1;
-            clock_gettime(CLOCK_MONOTONIC, &flow->ping_time);
+            clock_gettime(CLOCK_MONOTONIC, &flow->ping_times[flow->ping_head]);
+            flow->ping_slots[flow->ping_head] = 1;
+            flow->ping_head                   = (flow->ping_head + 1) & flow->ping_ring_mask;
+            flow->inflight_pings++;
         }
 
         evpl_iovec_addref(&flow->iovec);
@@ -125,15 +136,11 @@ flow_dispatch_callback(
         if (flow->state->connected) {
             evpl_sendv(evpl, flow->bind, &flow->iovec, 1, config->msg_size);
         } else {
-            evpl_sendtoepv(evpl, flow->bind, state->remote, &flow->iovec, 1,
-                           config->msg_size);
+            evpl_sendtoepv(evpl, flow->bind, state->remote, &flow->iovec, 1, config->msg_size);
         }
 
         flow->inflight_bytes += config->msg_size;
-
-        if (config->mode == FLOWBENCH_MODE_MSG) {
-            flow->inflight_msgs++;
-        }
+        flow->inflight_msgs++;
     }
 } /* flow_dispatch_callback */
 
@@ -161,8 +168,7 @@ notify_callback(
         case EVPL_NOTIFY_DISCONNECTED:
             flowbench_remove_flow(state->stats, &flow->stats);
             DL_DELETE(state->flows, flow);
-            close_flow(evpl, flow);
-            free(flow);
+            close_flow(flow);
             break;
         case EVPL_NOTIFY_SENT:
             flowbench_flow_add_sent_bytes(&flow->stats, &now, notify->sent.bytes);
@@ -189,20 +195,19 @@ notify_callback(
             flowbench_flow_add_recv_msgs(&flow->stats, &now, 1);
 
             if (config->test == FLOWBENCH_TEST_PINGPONG) {
-
                 if (config->role == FLOWBENCH_ROLE_CLIENT) {
-                    flowbench_flow_add_latency(&flow->stats,
-                                               ts_interval(&now, &flow->
-                                                           ping_time));
-                    flow->ping = 0;
+                    if (flow->ping_slots[flow->ping_tail]) {
+                        flowbench_flow_add_latency(&flow->stats,
+                                                   ts_interval(&now, &flow->ping_times[flow->ping_tail]));
+                        flow->ping_slots[flow->ping_tail] = 0;
+                        flow->ping_tail                   = (flow->ping_tail + 1) & flow->ping_ring_mask;
+                        flow->inflight_pings--;
+                    }
                     evpl_defer(state->evpl, &flow->dispatch);
                 } else {
-
                     evpl_iovec_addref(&flow->iovec);
-
                     if (flow->state->connected) {
-                        evpl_sendv(evpl, flow->bind,
-                                   &flow->iovec, 1, notify->recv_msg.length);
+                        evpl_sendv(evpl, flow->bind, &flow->iovec, 1, notify->recv_msg.length);
                     } else {
                         evpl_sendtov(evpl, flow->bind, notify->recv_msg.addr,
                                      &flow->iovec, 1, notify->recv_msg.length);
@@ -226,19 +231,31 @@ create_flow(
     int                          dstport)
 {
     struct flowbench_evpl_flow *flow;
+    int                         ping_ring_size;
 
     flow = calloc(1, sizeof(*flow));
 
-    snprintf(flow->stats.src, sizeof(flow->stats.src), "%s:%d", srcaddr, srcport
-             );
-    snprintf(flow->stats.dst, sizeof(flow->stats.dst), "%s:%d", dstaddr, dstport
-             );
+    snprintf(flow->stats.src, sizeof(flow->stats.src), "%s:%d", srcaddr, srcport);
+    snprintf(flow->stats.dst, sizeof(flow->stats.dst), "%s:%d", dstaddr, dstport);
 
     flow->state  = state;
     flow->config = state->config;
 
-    evpl_iovec_alloc(state->evpl, state->config->msg_size, 4096, 1, &flow->iovec
-                     );
+    if (state->config->test == FLOWBENCH_TEST_PINGPONG) {
+        ping_ring_size = 8;
+
+        while (ping_ring_size < state->config->max_inflight) {
+            ping_ring_size <<= 1;
+        }
+
+        flow->ping_times     = calloc(ping_ring_size, sizeof(struct timespec));
+        flow->ping_slots     = calloc(ping_ring_size, sizeof(int));
+        flow->ping_ring_mask = ping_ring_size - 1;
+        flow->ping_head      = 0;
+        flow->ping_tail      = 0;
+    }
+
+    evpl_iovec_alloc(state->evpl, state->config->msg_size, 4096, 1, &flow->iovec);
 
     flowbench_add_flow(state->stats, &flow->stats);
 
@@ -289,6 +306,10 @@ flowbench_evpl_thread_init(
 {
     struct flowbench_evpl_state   *state  = private_data;
     const struct flowbench_config *config = state->config;
+    evpl_segment_callback_t        a_segment_callback;
+    struct evpl_bind              *bind;
+    struct flowbench_evpl_flow    *flow;
+    int                            i;
 
     state->evpl = evpl;
 
@@ -364,28 +385,7 @@ flowbench_evpl_thread_init(
             if (state->connected) {
                 evpl_listen(state->evpl, state->protocol, state->local,
                             accept_callback, state);
-            }
-            break;
-        default:
-            break;
-    } /* switch */
-
-    return state;
-} /* flowbench_evpl_thread_init */
-
-void
-flowbench_evpl_thread_start(struct flowbench_evpl_state *state)
-{
-    const struct flowbench_config *config = state->config;
-    evpl_segment_callback_t        a_segment_callback;
-    struct evpl_bind              *bind;
-    struct flowbench_evpl_flow    *flow;
-    int                            i;
-
-    switch (config->role) {
-        case FLOWBENCH_ROLE_SERVER:
-
-            if (!state->connected) {
+            } else {
                 flow = create_flow(state, config->local, config->
                                    local_port, config->peer, config->peer_port);
                 bind = evpl_bind(state->evpl, state->protocol, state->
@@ -430,37 +430,9 @@ flowbench_evpl_thread_start(struct flowbench_evpl_state *state)
         default:
             abort();
     } /* switch */
-} /* flowbench_evpl_thread_start */
 
-void
-flowbench_evpl_thread_stop(struct flowbench_evpl_state *state)
-{
-    struct flowbench_evpl_flow *flow;
-
-    DL_FOREACH(state->flows, flow)
-    {
-        evpl_close(state->evpl, flow->bind);
-    }
-} /* flowbench_evpl_thread_stop */
-
-static void
-flowbench_evpl_thread_wake(
-    struct evpl *evpl,
-    void        *private_data)
-{
-    struct flowbench_evpl_state *state = private_data;
-
-    if (state->run && !state->running) {
-        state->running = 1;
-        flowbench_evpl_thread_start(state);
-    }
-
-    if (!state->run && state->running) {
-        state->running = 0;
-        flowbench_evpl_thread_stop(state);
-    }
-
-} /* flowbench_evpl_thread_wake */
+    return state;
+} /* flowbench_evpl_thread_init */
 
 void *
 flowbench_evpl_init(
@@ -490,12 +462,6 @@ flowbench_evpl_init(
 
         state->config = config;
         state->stats  = stats;
-
-        state->thread = evpl_thread_create(NULL,
-                                           flowbench_evpl_thread_init,
-                                           flowbench_evpl_thread_wake, NULL,
-                                           NULL, state);
-
     }
 
     return states;
@@ -505,11 +471,6 @@ void
 flowbench_evpl_cleanup(void *private_data)
 {
     struct flowbench_evpl_state *states = private_data;
-    int                          i;
-
-    for (i = 0; i < states[0].config->num_threads; ++i) {
-        evpl_thread_destroy(states[i].thread);
-    }
 
     free(states);
 
@@ -518,14 +479,22 @@ flowbench_evpl_cleanup(void *private_data)
 void
 flowbench_evpl_start(void *private_data)
 {
-    struct flowbench_evpl_state *states = private_data;
-    int                          i;
+    struct flowbench_evpl_state   *states = private_data, *state;
+    const struct flowbench_config *config = states[0].config;
+    int                            i;
 
-    for (i = 0; i < states[0].config->num_threads; ++i) {
-        states[i].run = 1;
-        __sync_synchronize();
-        evpl_thread_wake(states[i].thread);
+
+    for (i = 0; i < config->num_threads; ++i) {
+
+        state = &states[i];
+
+        state->thread = evpl_thread_create(NULL,
+                                           flowbench_evpl_thread_init,
+                                           NULL,
+                                           state);
+
     }
+
 } /* flowbench_evpl_start */
 
 void
@@ -535,9 +504,7 @@ flowbench_evpl_stop(void *private_data)
     int                          i;
 
     for (i = 0; i < states[0].config->num_threads; ++i) {
-        states[i].run = 0;
-        __sync_synchronize();
-        evpl_thread_wake(states[i].thread);
+        evpl_thread_destroy(states[i].thread);
     }
 } /* flowbench_evpl_stop */
 

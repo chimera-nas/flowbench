@@ -25,7 +25,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()    
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    add_definitions(-O3)
+    add_definitions(-O3 -march=native)
 endif()
 
 add_definitions(-g -Wall -Werror -Wno-unused-function)

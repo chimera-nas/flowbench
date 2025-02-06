@@ -2,4 +2,4 @@ build
 *.diff
 *.log
 cscope.out
-/private
+private
