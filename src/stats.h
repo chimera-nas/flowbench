@@ -180,10 +180,10 @@ flowbench_clear_stats(struct flowbench_stats *stats)
 
     DL_FOREACH(stats->flows, flow)
     {
-        stat_window_init(&flow->recv_bytes_window);
-        stat_window_init(&flow->sent_bytes_window);
-        stat_window_init(&flow->recv_msgs_window);
-        stat_window_init(&flow->sent_msgs_window);
+        stat_window_reset(&flow->recv_bytes_window);
+        stat_window_reset(&flow->sent_bytes_window);
+        stat_window_reset(&flow->recv_msgs_window);
+        stat_window_reset(&flow->sent_msgs_window);
 
         flow->sent_msgs  = 0;
         flow->sent_bytes = 0;

@@ -449,6 +449,7 @@ flowbench_evpl_init(
         evpl_global_config_set_huge_pages(evpl_config, 1);
     }
 
+    evpl_global_config_set_rdmacm_tos(evpl_config, 104);
     evpl_global_config_set_rdmacm_srq_prefill(evpl_config, 1);
     evpl_global_config_set_max_datagram_size(evpl_config, config->msg_size);
 

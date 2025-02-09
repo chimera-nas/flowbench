@@ -3,25 +3,25 @@
 #include <stdint.h>
 #include <errno.h>
 
-#define NS_PER_S (1000000000UL)
+#define NS_PER_S (1000000000LL)
 
-static uint64_t
+static int64_t
 ts_interval(
     const struct timespec *end,
     const struct timespec *start)
 {
     return NS_PER_S * (end->tv_sec - start->tv_sec) + (end->tv_nsec - start->tv_nsec);
-}
+} /* ts_interval */
 
 static void
 format_throughput(
-    char *out,
-    int outlen,
+    char    *out,
+    int      outlen,
     uint64_t bytes,
     uint64_t nanoseconds)
 {
-    double seconds = (double)nanoseconds / NS_PER_S;
-    double tp = 8.0 * (double)bytes / seconds;
+    double seconds = (double) nanoseconds / NS_PER_S;
+    double tp      = 8.0 * (double) bytes / seconds;
 
     if (tp > 1000000000.0F) {
         snprintf(out, outlen, "%.02F Gbps", tp / 1000000000.0F);
@@ -32,13 +32,16 @@ format_throughput(
     } else {
         snprintf(out, outlen, "%.02F bps", tp);
     }
-}
+} /* format_throughput */
 
 
-static int 
-parse_size(uint64_t *result, const char *size_str) {
+static int
+parse_size(
+    uint64_t   *result,
+    const char *size_str)
+{
 
-    char *end;
+    char    *end;
 
     errno = 0;
 
@@ -74,4 +77,4 @@ parse_size(uint64_t *result, const char *size_str) {
     *result = size * multiplier;
 
     return 0;
-}
+} /* parse_size */

@@ -256,7 +256,7 @@ main(
 
             framework->start(framework_private);
 
-            sleep(3);
+            sleep(60);
 
             if (config.interactive) {
                 ui_init(250);

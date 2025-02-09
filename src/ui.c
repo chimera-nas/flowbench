@@ -238,7 +238,7 @@ ui_print_flow(
     printf("Flow: Sent: %s (%s) [%s], Recv: %s (%s) [%s]", sent_size, send_rate, send_ops, recv_size, recv_rate,
            recv_ops);
 
-    if (flow->recv_msgs > 0) {
+    if (flow->total_latency > 0) {
         uint64_t avg_latency = flow->total_latency / flow->recv_msgs;
         printf(" | Latency: Min: %luns, Max: %luns, Avg: %luns",
                flow->min_latency, flow->max_latency, avg_latency);
