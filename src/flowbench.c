@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -256,7 +257,7 @@ main(
 
             framework->start(framework_private);
 
-            sleep(60);
+            sleep(3);
 
             if (config.interactive) {
                 ui_init(250);

@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -410,8 +411,9 @@ flowbench_evpl_thread_init(
                                        local_port, config->peer, config->
                                        peer_port);
                     bind = evpl_connect(state->evpl, state->protocol,
-                                        state->remote, notify_callback,
-                                        a_segment_callback, flow);
+                                        NULL, state->remote,
+                                        notify_callback, a_segment_callback,
+                                        flow);
                     flow->bind = bind;
                     evpl_bind_request_send_notifications(state->evpl, bind);
                     DL_APPEND(state->flows, flow);
