@@ -19,42 +19,46 @@
 #endif /* unlikely */
 
 struct flowbench_evpl_flow {
-    struct evpl_bind              *bind;
-    struct flowbench_flow          stats;
-    struct evpl_deferral           dispatch;
-    const struct flowbench_config *config;
-    struct flowbench_evpl_state   *state;
+    struct evpl_bind            *bind;
+    struct flowbench_flow        stats;
+    struct evpl_deferral         dispatch;
+    struct flowbench_evpl_state *state;
 
-    uint64_t                       inflight_msgs;
-    uint64_t                       inflight_bytes;
-    uint64_t                       inflight_pings;
-    struct timespec               *ping_times;
-    int                           *ping_slots;
-    int                            ping_head;
-    int                            ping_tail;
-    int                            ping_ring_mask;
-    int                            connected;
-    struct evpl_iovec              iovec;
+    uint64_t                     inflight_msgs;
+    uint64_t                     inflight_bytes;
+    uint64_t                     inflight_pings;
+    struct timespec             *ping_times;
+    int                         *ping_slots;
+    int                          ping_head;
+    int                          ping_tail;
+    int                          ping_ring_mask;
+    int                          connected;
+    struct evpl_iovec            iovec;
 
-    struct flowbench_evpl_flow    *prev;
-    struct flowbench_evpl_flow    *next;
+    struct flowbench_evpl_flow  *prev;
+    struct flowbench_evpl_flow  *next;
 
 };
 
 struct flowbench_evpl_state {
-    const struct flowbench_config *config;
-    struct flowbench_stats        *stats;
-    struct evpl_thread            *thread;
-    struct evpl                   *evpl;
-    struct evpl_endpoint          *local;
-    struct evpl_endpoint          *remote;
-    struct flowbench_evpl_flow    *flows;
+    struct flowbench_evpl_shared *shared;
+    struct flowbench_stats       *stats;
+    struct evpl_thread           *thread;
+    struct evpl                  *evpl;
+    struct flowbench_evpl_flow   *flows;
+};
+
+struct flowbench_evpl_shared {
+    struct flowbench_config     *config;
+    int                          stream;
+    int                          connected;
+    int                          client;
+    int                          stopped;
     enum evpl_protocol_id protocol;
-    int                            error;
-    int                            stream;
-    int                            connected;
-    int                            client;
-    int                            stopped;
+    struct flowbench_evpl_state *states;
+    struct evpl_endpoint        *local;
+    struct evpl_endpoint        *remote;
+    struct evpl_listener        *listener;
 };
 
 void
@@ -78,21 +82,22 @@ segment_callback(
 {
     struct flowbench_evpl_flow *flow = private_data;
 
-    return flow->config->msg_size;
+    return flow->state->shared->config->msg_size;
 } /* segment_callback */
 
 static inline int
 can_send(struct flowbench_evpl_flow *flow)
 {
     struct flowbench_evpl_state   *state  = flow->state;
-    const struct flowbench_config *config = flow->config;
+    struct flowbench_evpl_shared  *shared = state->shared;
+    const struct flowbench_config *config = shared->config;
 
     switch (config->test) {
         case FLOWBENCH_TEST_THROUGHPUT:
             if ((config->role == FLOWBENCH_ROLE_CLIENT && !config->reverse) ||
                 (config->role == FLOWBENCH_ROLE_SERVER && config->reverse) ||
                 config->bidirectional) {
-                if (state->config->mode == FLOWBENCH_MODE_STREAM) {
+                if (config->mode == FLOWBENCH_MODE_STREAM) {
                     return (flow->inflight_bytes + config->msg_size <= config->max_inflight);
                 } else {
                     return (flow->inflight_msgs < config->max_inflight);
@@ -118,7 +123,8 @@ flow_dispatch_callback(
 {
     struct flowbench_evpl_flow    *flow   = private_data;
     struct flowbench_evpl_state   *state  = flow->state;
-    const struct flowbench_config *config = flow->config;
+    struct flowbench_evpl_shared  *shared = state->shared;
+    const struct flowbench_config *config = shared->config;
 
     if (unlikely(flow->bind == NULL)) {
         return;
@@ -134,10 +140,10 @@ flow_dispatch_callback(
 
         evpl_iovec_addref(&flow->iovec);
 
-        if (flow->state->connected) {
+        if (shared->connected) {
             evpl_sendv(evpl, flow->bind, &flow->iovec, 1, config->msg_size);
         } else {
-            evpl_sendtoepv(evpl, flow->bind, state->remote, &flow->iovec, 1, config->msg_size);
+            evpl_sendtoepv(evpl, flow->bind, shared->remote, &flow->iovec, 1, config->msg_size);
         }
 
         flow->inflight_bytes += config->msg_size;
@@ -154,7 +160,8 @@ notify_callback(
 {
     struct flowbench_evpl_flow    *flow   = private_data;
     struct flowbench_evpl_state   *state  = flow->state;
-    const struct flowbench_config *config = flow->config;
+    struct flowbench_evpl_shared  *shared = state->shared;
+    const struct flowbench_config *config = shared->config;
     struct evpl_iovec              iovecs[8];
     struct timespec                now;
     int                            niovecs, i;
@@ -207,7 +214,7 @@ notify_callback(
                     evpl_defer(state->evpl, &flow->dispatch);
                 } else {
                     evpl_iovec_addref(&flow->iovec);
-                    if (flow->state->connected) {
+                    if (shared->connected) {
                         evpl_sendv(evpl, flow->bind, &flow->iovec, 1, notify->recv_msg.length);
                     } else {
                         evpl_sendtov(evpl, flow->bind, notify->recv_msg.addr,
@@ -231,21 +238,22 @@ create_flow(
     const char                  *dstaddr,
     int                          dstport)
 {
-    struct flowbench_evpl_flow *flow;
-    int                         ping_ring_size;
+    struct flowbench_evpl_flow   *flow;
+    struct flowbench_evpl_shared *shared = state->shared;
+    struct flowbench_config      *config = shared->config;
+    int                           ping_ring_size;
 
     flow = calloc(1, sizeof(*flow));
 
     snprintf(flow->stats.src, sizeof(flow->stats.src), "%s:%d", srcaddr, srcport);
     snprintf(flow->stats.dst, sizeof(flow->stats.dst), "%s:%d", dstaddr, dstport);
 
-    flow->state  = state;
-    flow->config = state->config;
+    flow->state = state;
 
-    if (state->config->test == FLOWBENCH_TEST_PINGPONG) {
+    if (config->test == FLOWBENCH_TEST_PINGPONG) {
         ping_ring_size = 8;
 
-        while (ping_ring_size < state->config->max_inflight) {
+        while (ping_ring_size < config->max_inflight) {
             ping_ring_size <<= 1;
         }
 
@@ -256,7 +264,7 @@ create_flow(
         flow->ping_tail      = 0;
     }
 
-    evpl_iovec_alloc(state->evpl, state->config->msg_size, 4096, 1, &flow->iovec);
+    evpl_iovec_alloc(state->evpl, config->msg_size, 4096, 1, &flow->iovec);
 
     flowbench_add_flow(state->stats, &flow->stats);
 
@@ -270,28 +278,28 @@ create_flow(
 static void
 accept_callback(
     struct evpl             *evpl,
-    struct evpl_bind        *listen_bind,
-    struct evpl_bind        *accepted_bind,
+    struct evpl_bind        *bind,
     evpl_notify_callback_t  *a_notify_callback,
     evpl_segment_callback_t *a_segment_callback,
     void                   **conn_private_data,
     void                    *private_data)
 {
-    struct flowbench_evpl_state   *state  = private_data;
-    const struct flowbench_config *config = state->config;
-    struct flowbench_evpl_flow    *flow;
+    struct flowbench_evpl_state  *state  = private_data;
+    struct flowbench_evpl_shared *shared = state->shared;
+    struct flowbench_config      *config = shared->config;
+    struct flowbench_evpl_flow   *flow;
 
     flow = create_flow(state, config->local, config->local_port, config->
                        peer, config->peer_port);
-    flow->bind = accepted_bind;
+    flow->bind = bind;
 
     flowbench_add_flow(state->stats, &flow->stats);
 
-    evpl_bind_request_send_notifications(evpl, accepted_bind);
+    evpl_bind_request_send_notifications(evpl, bind);
 
     *a_notify_callback = notify_callback;
 
-    if (state->stream && state->config->mode == FLOWBENCH_MODE_MSG) {
+    if (shared->stream && config->mode == FLOWBENCH_MODE_MSG) {
         *a_segment_callback = segment_callback;
     }
 
@@ -306,7 +314,8 @@ flowbench_evpl_thread_init(
     void        *private_data)
 {
     struct flowbench_evpl_state   *state  = private_data;
-    const struct flowbench_config *config = state->config;
+    struct flowbench_evpl_shared  *shared = state->shared;
+    const struct flowbench_config *config = shared->config;
     evpl_segment_callback_t        a_segment_callback;
     struct evpl_bind              *bind;
     struct flowbench_evpl_flow    *flow;
@@ -314,83 +323,15 @@ flowbench_evpl_thread_init(
 
     state->evpl = evpl;
 
-    switch (config->mode) {
-        case FLOWBENCH_MODE_STREAM:
-            switch (config->protocol) {
-                case FLOWBENCH_PROTO_TCP:
-                    state->protocol  = EVPL_STREAM_SOCKET_TCP;
-                    state->stream    = 1;
-                    state->connected = 1;
-                    break;
-                case FLOWBENCH_PROTO_RDMACM_RC:
-                    state->protocol  = EVPL_STREAM_RDMACM_RC;
-                    state->stream    = 1;
-                    state->connected = 1;
-                case FLOWBENCH_PROTO_XLIO_TCP:
-                    state->protocol  = EVPL_STREAM_XLIO_TCP;
-                    state->stream    = 1;
-                    state->connected = 1;
-                    break;
-                default:
-                    state->error = 1;
-                    return state;
-            } /* switch */
-            break;
-
-        case FLOWBENCH_MODE_MSG:
-            switch (config->protocol) {
-                case FLOWBENCH_PROTO_TCP:
-                    state->protocol  = EVPL_STREAM_SOCKET_TCP;
-                    state->stream    = 1;
-                    state->connected = 1;
-                    break;
-                case FLOWBENCH_PROTO_UDP:
-                    state->protocol  = EVPL_DATAGRAM_SOCKET_UDP;
-                    state->stream    = 0;
-                    state->connected = 0;
-                    break;
-                case FLOWBENCH_PROTO_RDMACM_RC:
-                    state->protocol  = EVPL_DATAGRAM_RDMACM_RC;
-                    state->stream    = 0;
-                    state->connected = 1;
-                    break;
-                case FLOWBENCH_PROTO_RDMACM_UD:
-                    state->protocol  = EVPL_DATAGRAM_RDMACM_UD;
-                    state->stream    = 0;
-                    state->connected = 0;
-                    break;
-                case FLOWBENCH_PROTO_XLIO_TCP:
-                    state->protocol  = EVPL_STREAM_XLIO_TCP;
-                    state->stream    = 1;
-                    state->connected = 1;
-                    break;
-                default:
-                    state->error = 1;
-                    return state;
-            } /* switch */
-            break;
-        default:
-            state->error = 1;
-            return state;
-    } /* switch */
-
-    state->client = (config->role == FLOWBENCH_ROLE_CLIENT);
-
-    state->local = evpl_endpoint_create(state->evpl, config->local, config->
-                                        local_port);
-    state->remote = evpl_endpoint_create(state->evpl, config->peer, config->
-                                         peer_port);
-
     switch (config->role) {
         case FLOWBENCH_ROLE_SERVER:
-            if (state->connected) {
-                evpl_listen(state->evpl, state->protocol, state->local,
-                            accept_callback, state);
+            if (shared->connected) {
+                evpl_listener_attach(state->evpl, state->shared->listener, accept_callback, state);
             } else {
                 flow = create_flow(state, config->local, config->
                                    local_port, config->peer, config->peer_port);
-                bind = evpl_bind(state->evpl, state->protocol, state->
-                                 local, notify_callback, flow);
+                bind = evpl_bind(state->evpl, shared->protocol,
+                                 state->shared->local, notify_callback, flow);
                 flow->bind = bind;
                 evpl_bind_request_send_notifications(state->evpl, bind);
 
@@ -398,9 +339,9 @@ flowbench_evpl_thread_init(
             }
             break;
         case FLOWBENCH_ROLE_CLIENT:
-            if (state->connected) {
+            if (shared->connected) {
 
-                if (state->stream && state->config->mode == FLOWBENCH_MODE_MSG) {
+                if (shared->stream && config->mode == FLOWBENCH_MODE_MSG) {
                     a_segment_callback = segment_callback;
                 } else {
                     a_segment_callback = NULL;
@@ -410,8 +351,8 @@ flowbench_evpl_thread_init(
                     flow = create_flow(state, config->local, config->
                                        local_port, config->peer, config->
                                        peer_port);
-                    bind = evpl_connect(state->evpl, state->protocol,
-                                        NULL, state->remote,
+                    bind = evpl_connect(state->evpl, shared->protocol,
+                                        NULL, state->shared->remote,
                                         notify_callback, a_segment_callback,
                                         flow);
                     flow->bind = bind;
@@ -421,8 +362,8 @@ flowbench_evpl_thread_init(
             } else {
                 flow = create_flow(state, config->local, config->
                                    local_port, config->peer, config->peer_port);
-                bind = evpl_bind(state->evpl, state->protocol, state->
-                                 local, notify_callback, flow);
+                bind = evpl_bind(state->evpl, shared->protocol,
+                                 state->shared->local, notify_callback, flow);
                 flow->bind = bind;
                 evpl_bind_request_send_notifications(state->evpl, bind);
                 DL_APPEND(state->flows, flow);
@@ -436,14 +377,32 @@ flowbench_evpl_thread_init(
     return state;
 } /* flowbench_evpl_thread_init */
 
+static void
+flowbench_evpl_thread_destroy(
+    struct evpl *evpl,
+    void        *private_data)
+{
+    struct flowbench_evpl_state  *state  = private_data;
+    struct flowbench_evpl_shared *shared = state->shared;
+    struct flowbench_config      *config = shared->config;
+
+    if (config->role == FLOWBENCH_ROLE_SERVER && shared->connected) {
+        evpl_listener_detach(evpl, shared->listener);
+    }
+
+} /* flowbench_evpl_thread_destroy */
+
 void *
 flowbench_evpl_init(
     struct flowbench_config *config,
     struct flowbench_stats  *stats)
 {
-    struct flowbench_evpl_state *states, *state;
-    int                          i;
-    struct evpl_global_config   *evpl_config;
+    struct flowbench_evpl_shared *shared;
+    struct flowbench_evpl_state  *state;
+    int                           i;
+    struct evpl_global_config    *evpl_config;
+
+    shared = calloc(1, sizeof(*shared));
 
     evpl_config = evpl_global_config_init();
 
@@ -457,45 +416,125 @@ flowbench_evpl_init(
 
     evpl_init(evpl_config);
 
-    states = calloc(config->num_threads, sizeof(*state));
+    shared->config = config;
+    shared->states = calloc(config->num_threads, sizeof(*state));
+
+    if (config->role == FLOWBENCH_ROLE_SERVER) {
+        shared->listener = evpl_listener_create();
+    }
 
     for (i = 0; i < config->num_threads; ++i) {
 
-        state = &states[i];
+        state = &shared->states[i];
 
-        state->config = config;
         state->stats  = stats;
+        state->shared = shared;
     }
 
-    return states;
+    return shared;
 } /* flowbench_evpl_init */
 
 void
 flowbench_evpl_cleanup(void *private_data)
 {
-    struct flowbench_evpl_state *states = private_data;
+    struct flowbench_evpl_shared *shared = private_data;
+    struct flowbench_config      *config = shared->config;
 
-    free(states);
+    if (config->role == FLOWBENCH_ROLE_SERVER) {
+        evpl_listener_destroy(shared->listener);
+    }
+
+    free(shared->states);
+    free(shared);
 
 } /* flowbench_evpl_cleanup */
 
 void
 flowbench_evpl_start(void *private_data)
 {
-    struct flowbench_evpl_state   *states = private_data, *state;
-    const struct flowbench_config *config = states[0].config;
+    struct flowbench_evpl_shared  *shared = private_data;
+    const struct flowbench_config *config = shared->config;
     int                            i;
+    struct flowbench_evpl_state   *state;
 
+    switch (config->mode) {
+        case FLOWBENCH_MODE_STREAM:
+            switch (config->protocol) {
+                case FLOWBENCH_PROTO_TCP:
+                    shared->protocol  = EVPL_STREAM_SOCKET_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_RDMACM_RC:
+                    shared->protocol  = EVPL_STREAM_RDMACM_RC;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                case FLOWBENCH_PROTO_XLIO_TCP:
+                    shared->protocol  = EVPL_STREAM_XLIO_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                default:
+                    fprintf(stderr, "Unsupported protocol %d\n", config->protocol);
+                    exit(1);
+            } /* switch */
+            break;
+
+        case FLOWBENCH_MODE_MSG:
+            switch (config->protocol) {
+                case FLOWBENCH_PROTO_TCP:
+                    shared->protocol  = EVPL_STREAM_SOCKET_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_UDP:
+                    shared->protocol  = EVPL_DATAGRAM_SOCKET_UDP;
+                    shared->stream    = 0;
+                    shared->connected = 0;
+                    break;
+                case FLOWBENCH_PROTO_RDMACM_RC:
+                    shared->protocol  = EVPL_DATAGRAM_RDMACM_RC;
+                    shared->stream    = 0;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_RDMACM_UD:
+                    shared->protocol  = EVPL_DATAGRAM_RDMACM_UD;
+                    shared->stream    = 0;
+                    shared->connected = 0;
+                    break;
+                case FLOWBENCH_PROTO_XLIO_TCP:
+                    shared->protocol  = EVPL_STREAM_XLIO_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                default:
+                    fprintf(stderr, "Unsupported protocol %d\n", config->protocol);
+                    exit(1);
+            } /* switch */
+            break;
+        default:
+            fprintf(stderr, "Unsupported mode %d\n", config->mode);
+            exit(1);
+    } /* switch */
+
+    shared->client = (config->role == FLOWBENCH_ROLE_CLIENT);
+
+    shared->local  = evpl_endpoint_create(config->local, config->local_port);
+    shared->remote = evpl_endpoint_create(config->peer, config->peer_port);
 
     for (i = 0; i < config->num_threads; ++i) {
 
-        state = &states[i];
+        state = &shared->states[i];
 
         state->thread = evpl_thread_create(NULL,
                                            flowbench_evpl_thread_init,
-                                           NULL,
+                                           flowbench_evpl_thread_destroy,
                                            state);
 
+    }
+
+    if (config->role == FLOWBENCH_ROLE_SERVER && shared->connected) {
+        evpl_listen(shared->listener, shared->protocol, shared->local);
     }
 
 } /* flowbench_evpl_start */
@@ -503,11 +542,12 @@ flowbench_evpl_start(void *private_data)
 void
 flowbench_evpl_stop(void *private_data)
 {
-    struct flowbench_evpl_state *states = private_data;
-    int                          i;
+    struct flowbench_evpl_shared *shared = private_data;
+    struct flowbench_config      *config = shared->config;
+    int                           i;
 
-    for (i = 0; i < states[0].config->num_threads; ++i) {
-        evpl_thread_destroy(states[i].thread);
+    for (i = 0; i < config->num_threads; ++i) {
+        evpl_thread_destroy(shared->states[i].thread);
     }
 } /* flowbench_evpl_stop */
 
