@@ -34,10 +34,6 @@ struct flowbench_evpl_flow {
     int                          ping_ring_mask;
     int                          connected;
     struct evpl_iovec            iovec;
-
-    struct flowbench_evpl_flow  *prev;
-    struct flowbench_evpl_flow  *next;
-
 };
 
 struct flowbench_evpl_state {
@@ -45,7 +41,6 @@ struct flowbench_evpl_state {
     struct flowbench_stats       *stats;
     struct evpl_thread           *thread;
     struct evpl                  *evpl;
-    struct flowbench_evpl_flow   *flows;
 };
 
 struct flowbench_evpl_shared {
@@ -175,7 +170,6 @@ notify_callback(
             break;
         case EVPL_NOTIFY_DISCONNECTED:
             flowbench_remove_flow(state->stats, &flow->stats);
-            DL_DELETE(state->flows, flow);
             close_flow(flow);
             break;
         case EVPL_NOTIFY_SENT:
@@ -293,8 +287,6 @@ accept_callback(
                        peer, config->peer_port);
     flow->bind = bind;
 
-    flowbench_add_flow(state->stats, &flow->stats);
-
     evpl_bind_request_send_notifications(evpl, bind);
 
     *a_notify_callback = notify_callback;
@@ -305,7 +297,6 @@ accept_callback(
 
     *conn_private_data = flow;
 
-    DL_APPEND(state->flows, flow);
 } /* accept_callback */
 
 static void *
@@ -335,7 +326,6 @@ flowbench_evpl_thread_init(
                 flow->bind = bind;
                 evpl_bind_request_send_notifications(state->evpl, bind);
 
-                DL_APPEND(state->flows, flow);
             }
             break;
         case FLOWBENCH_ROLE_CLIENT:
@@ -357,7 +347,6 @@ flowbench_evpl_thread_init(
                                         flow);
                     flow->bind = bind;
                     evpl_bind_request_send_notifications(state->evpl, bind);
-                    DL_APPEND(state->flows, flow);
                 }
             } else {
                 flow = create_flow(state, config->local, config->
@@ -366,7 +355,6 @@ flowbench_evpl_thread_init(
                                  state->shared->local, notify_callback, flow);
                 flow->bind = bind;
                 evpl_bind_request_send_notifications(state->evpl, bind);
-                DL_APPEND(state->flows, flow);
             }
 
             break;

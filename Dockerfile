@@ -23,7 +23,7 @@ RUN if [ "$ENABLE_XLIO" = "1" ] ; then \
     make install && \
     git clone https://github.com/Mellanox/libxlio.git /libxlio && \
     cd /libxlio && \
-    git checkout new_arch_poc && \
+    git checkout 9877e909310cde1112744206cfeb04524910c758 && \
     ./autogen.sh && \
     ./configure --with-dpcp=/usr/local && \
     make -j8 && \
@@ -55,8 +55,8 @@ RUN apt-get -y update && \
 
 COPY --from=build /usr/local/bin/flowbench /usr/local/bin/flowbench
 COPY --from=build /usr/local/lib/* /usr/local/lib/
-COPY --from=build /usr/local/sbin/* /usr/local/sbin/
-COPY --from=build /usr/local/etc/* /usr/local/etc/
+#COPY --from=build /usr/local/sbin/* /usr/local/sbin/
+#COPY --from=build /usr/local/etc/* /usr/local/etc/
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
