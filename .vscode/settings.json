@@ -22,5 +22,13 @@
   "cmakeExplorer.parallelJobs": 1,
   "editor.tabSize": 4,
   "editor.formatOnSave": true,
-  "files.associations": {}
+  "files.associations": {
+    "utlist.h": "c",
+    "logging.h": "c",
+    "nvme.h": "c",
+    "evpl.h": "c",
+    "evpl_shared.h": "c",
+    "endpoint.h": "c",
+    "macros.h": "c"
+  }
 }

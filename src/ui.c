@@ -98,7 +98,7 @@ display_summary(struct flowbench_stats *stats)
     uint64_t               total_recv_bytes_tp = 0, total_sent_bytes_tp = 0;
     uint64_t               total_recv_msgs_tp = 0, total_sent_msgs_tp = 0;
     struct flowbench_flow  summary = stats->saved;
-    struct flowbench_flow *flow    = stats->flows;
+    struct flowbench_flow *flow;
 
     DL_FOREACH(stats->flows, flow)
     {
