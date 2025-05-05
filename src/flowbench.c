@@ -68,24 +68,25 @@ main(
 
     signal(SIGINT, sigint_handler);
 
-    config.framework_id  = FLOWBENCH_FRAMEWORK_EVPL;
-    config.role          = FLOWBENCH_ROLE_SERVER;
-    config.mode          = FLOWBENCH_MODE_MSG;
-    config.protocol      = FLOWBENCH_PROTO_TCP;
-    config.test          = FLOWBENCH_TEST_THROUGHPUT;
-    config.interactive   = 1;
-    config.bidirectional = 0;
-    config.reverse       = 0;
-    config.local         = "0.0.0.0";
-    config.local_port    = 32500;
-    config.peer          = "127.0.0.1";
-    config.peer_port     = 32500;
-    config.num_threads   = 1;
-    config.num_flows     = 1;
-    config.msg_size      = 65536;
-    config.max_inflight  = 0;
-    config.duration      = 10UL * 1000000000UL;
-    config.huge_pages    = 0;
+    config.framework_id       = FLOWBENCH_FRAMEWORK_EVPL;
+    config.role               = FLOWBENCH_ROLE_SERVER;
+    config.mode               = FLOWBENCH_MODE_MSG;
+    config.protocol           = FLOWBENCH_PROTO_TCP;
+    config.test               = FLOWBENCH_TEST_THROUGHPUT;
+    config.interactive        = 1;
+    config.bidirectional      = 0;
+    config.reverse            = 0;
+    config.local              = "0.0.0.0";
+    config.local_port         = 32500;
+    config.peer               = "127.0.0.1";
+    config.peer_port          = 32500;
+    config.num_threads        = 1;
+    config.num_flows          = 1;
+    config.msg_size           = 65536;
+    config.max_inflight       = 0;
+    config.max_inflight_bytes = 0;
+    config.duration           = 10UL * 1000000000UL;
+    config.huge_pages         = 0;
     while ((opt = getopt(argc, argv, "a:Bd:f:hHl:m:n:r:Rp:P:q:Qs:t:v")) != -1) {
         switch (opt) {
             case 'a':
@@ -191,16 +192,14 @@ main(
     }
 
     if (config.max_inflight == 0) {
-        if (config.mode == FLOWBENCH_MODE_MSG) {
-            if (config.test == FLOWBENCH_TEST_PINGPONG) {
-                config.max_inflight = 1;
-            } else {
-                config.max_inflight = 64;
-            }
+        if (config.test == FLOWBENCH_TEST_PINGPONG) {
+            config.max_inflight = 1;
         } else {
-            config.max_inflight = 128 * 1024;
+            config.max_inflight = 64;
         }
     }
+
+    config.max_inflight_bytes = config.max_inflight * config.msg_size;
 
     if (config.protocol == FLOWBENCH_PROTO_UDP &&
         config.msg_size > 65535) {

@@ -21,12 +21,13 @@ enum flowbench_mode {
 };
 
 enum flowbench_protocol {
-    FLOWBENCH_PROTO_INVALID   = 0,
-    FLOWBENCH_PROTO_TCP       = 1,
-    FLOWBENCH_PROTO_UDP       = 2,
-    FLOWBENCH_PROTO_RDMACM_RC = 3,
-    FLOWBENCH_PROTO_RDMACM_UD = 4,
-    FLOWBENCH_PROTO_XLIO_TCP  = 5
+    FLOWBENCH_PROTO_INVALID      = 0,
+    FLOWBENCH_PROTO_TCP          = 1,
+    FLOWBENCH_PROTO_UDP          = 2,
+    FLOWBENCH_PROTO_RDMACM_RC    = 3,
+    FLOWBENCH_PROTO_RDMACM_UD    = 4,
+    FLOWBENCH_PROTO_XLIO_TCP     = 5,
+    FLOWBENCH_PROTO_IO_URING_TCP = 6
 };
 
 enum flowbench_test {
@@ -53,6 +54,7 @@ struct flowbench_config {
     int         num_flows;
     uint64_t    msg_size;
     uint64_t    max_inflight;
+    uint64_t    max_inflight_bytes;
     uint64_t    duration;
 };
 
@@ -114,6 +116,10 @@ map_protocol(const char *name)
 
     if (strcmp(name, "xlio_tcp") == 0) {
         return FLOWBENCH_PROTO_XLIO_TCP;
+    }
+
+    if (strcmp(name, "io_uring_tcp") == 0) {
+        return FLOWBENCH_PROTO_IO_URING_TCP;
     }
 
     return FLOWBENCH_PROTO_INVALID;

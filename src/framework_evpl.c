@@ -93,7 +93,7 @@ can_send(struct flowbench_evpl_flow *flow)
                 (config->role == FLOWBENCH_ROLE_SERVER && config->reverse) ||
                 config->bidirectional) {
                 if (config->mode == FLOWBENCH_MODE_STREAM) {
-                    return (flow->inflight_bytes + config->msg_size <= config->max_inflight);
+                    return (flow->inflight_bytes + config->msg_size <= config->max_inflight_bytes);
                 } else {
                     return (flow->inflight_msgs < config->max_inflight);
                 }
@@ -462,6 +462,11 @@ flowbench_evpl_start(void *private_data)
                     shared->stream    = 1;
                     shared->connected = 1;
                     break;
+                case FLOWBENCH_PROTO_IO_URING_TCP:
+                    shared->protocol  = EVPL_STREAM_IO_URING_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
                 default:
                     fprintf(stderr, "Unsupported protocol %d\n", config->protocol);
                     exit(1);
@@ -492,6 +497,11 @@ flowbench_evpl_start(void *private_data)
                     break;
                 case FLOWBENCH_PROTO_XLIO_TCP:
                     shared->protocol  = EVPL_STREAM_XLIO_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_IO_URING_TCP:
+                    shared->protocol  = EVPL_STREAM_IO_URING_TCP;
                     shared->stream    = 1;
                     shared->connected = 1;
                     break;

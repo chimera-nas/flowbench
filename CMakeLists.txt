@@ -14,6 +14,8 @@ endif()
 
 add_definitions(-DFLOWBENCH_VERSION="${FLOWBENCH_VERSION}")
 
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ext/libevpl/ext/prometheus-c)
+
 message(STATUS "Building ${CMAKE_BUILD_TYPE} for ${CMAKE_SYSTEM_NAME}")
 
 
