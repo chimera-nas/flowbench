@@ -5,15 +5,14 @@
         },
         "customizations": {
                 "vscode": {
-                        // Set *default* container specific settings.json values on container create.
                         "settings": {},
-                        // Add the IDs of extensions you want installed when the container is created.
                         "extensions": [
-                                "ms-vscode.cpptools-extension-pack",
+                                "anysphere.cpptools",
                                 "ms-vscode.cmake-tools",
                                 "fredericbonnet.cmake-test-adapter",
                                 "ms-azuretools.vscode-docker",
-                                "zachflower.uncrustify"
+                                "benjarvis.uncrustify",
+                                "anthropic.claude-code"
                         ]
                 }
         },

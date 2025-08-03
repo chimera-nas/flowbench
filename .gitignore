@@ -3,3 +3,5 @@ build
 *.log
 cscope.out
 private
+.cache
+compile_commands.json

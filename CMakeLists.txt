@@ -37,3 +37,5 @@ include_directories(3rdparty)
 
 add_subdirectory(ext)
 add_subdirectory(src)
+
+execute_process(COMMAND ln -sf ${CMAKE_BINARY_DIR}/compile_commands.json ${CMAKE_SOURCE_DIR}/compile_commands.json)

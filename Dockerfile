@@ -8,7 +8,7 @@ RUN apt-get -y update && \
     apt-get -y --no-install-recommends upgrade && \
     apt-get -y --no-install-recommends install clang cmake ninja-build git lldb gdb less psmisc \
     uuid-dev libjansson-dev libclang-rt-18-dev llvm build-essential \
-    autoconf automake make libtool pkg-config ca-certificates \
+    autoconf automake make libtool pkg-config ca-certificates libssl-dev \
     libxxhash-dev liburcu-dev librdmacm-dev liburing-dev libunwind-dev flex bison libncurses-dev libcurl4-openssl-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

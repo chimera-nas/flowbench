@@ -401,6 +401,7 @@ flowbench_evpl_init(
     evpl_global_config_set_rdmacm_tos(evpl_config, 104);
     evpl_global_config_set_rdmacm_srq_prefill(evpl_config, 1);
     evpl_global_config_set_max_datagram_size(evpl_config, config->msg_size);
+    evpl_global_config_set_tls_verify_peer(evpl_config, 0);
 
     evpl_init(evpl_config);
 
@@ -453,6 +454,11 @@ flowbench_evpl_start(void *private_data)
                     shared->stream    = 1;
                     shared->connected = 1;
                     break;
+                case FLOWBENCH_PROTO_TLS:
+                    shared->protocol  = EVPL_STREAM_SOCKET_TLS;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
                 case FLOWBENCH_PROTO_RDMACM_RC:
                     shared->protocol  = EVPL_STREAM_RDMACM_RC;
                     shared->stream    = 1;
@@ -477,6 +483,11 @@ flowbench_evpl_start(void *private_data)
             switch (config->protocol) {
                 case FLOWBENCH_PROTO_TCP:
                     shared->protocol  = EVPL_STREAM_SOCKET_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_TLS:
+                    shared->protocol  = EVPL_STREAM_SOCKET_TLS;
                     shared->stream    = 1;
                     shared->connected = 1;
                     break;

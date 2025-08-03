@@ -27,7 +27,9 @@ enum flowbench_protocol {
     FLOWBENCH_PROTO_RDMACM_RC    = 3,
     FLOWBENCH_PROTO_RDMACM_UD    = 4,
     FLOWBENCH_PROTO_XLIO_TCP     = 5,
-    FLOWBENCH_PROTO_IO_URING_TCP = 6
+    FLOWBENCH_PROTO_IO_URING_TCP = 6,
+    FLOWBENCH_PROTO_TLS          = 7,
+
 };
 
 enum flowbench_test {
@@ -120,6 +122,10 @@ map_protocol(const char *name)
 
     if (strcmp(name, "io_uring_tcp") == 0) {
         return FLOWBENCH_PROTO_IO_URING_TCP;
+    }
+
+    if (strcmp(name, "tls") == 0) {
+        return FLOWBENCH_PROTO_TLS;
     }
 
     return FLOWBENCH_PROTO_INVALID;
