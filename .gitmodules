@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Ben Jarvis
+#
+# SPDX-License-Identifier: Unlicense
+
 [submodule "ext/libevpl"]
 	path = ext/libevpl
 	url = https://github.com/chimera-nas/libevpl.git
