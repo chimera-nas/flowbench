@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Ben Jarvis
+#
+# SPDX-License-Identifier: Unlicense
+
 FROM ubuntu:24.04 AS build
 ARG BUILD_TYPE=Release
 ARG ENABLE_XLIO=1
@@ -7,7 +11,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get -y update && \
     apt-get -y --no-install-recommends upgrade && \
     apt-get -y --no-install-recommends install clang cmake ninja-build git lldb gdb less psmisc \
-    uuid-dev libjansson-dev libclang-rt-18-dev llvm build-essential \
+    uuid-dev libjansson-dev libclang-rt-18-dev llvm build-essential uthash-dev \
     autoconf automake make libtool pkg-config ca-certificates libssl-dev \
     libxxhash-dev liburcu-dev librdmacm-dev liburing-dev libunwind-dev flex bison libncurses-dev libcurl4-openssl-dev && \
     apt-get clean && \
