@@ -30,13 +30,16 @@ stat_window_reset(struct stat_window *sw)
     for (int i = 0; i < STAT_WINDOW_NUM_BUCKETS; i++) {
         sw->buckets[i] = 0;
     }
+
+    sw->count   = 0;
+    sw->current = 0;
+
 } /* stat_window_reset */
 
 static inline void
-stat_window_add(
+stat_window_advance(
     struct stat_window *sw,
-    struct timespec    *current_time,
-    uint64_t            value)
+    struct timespec    *current_time)
 {
     int64_t delta;
 
@@ -49,7 +52,7 @@ stat_window_add(
     while (delta > STAT_WINDOW_BUCKET_INTERVAL) {
 
         sw->bucket_start.tv_nsec += STAT_WINDOW_BUCKET_INTERVAL;
-        if (sw->bucket_start.tv_nsec > 1000000000UL) {
+        if (sw->bucket_start.tv_nsec >= 1000000000UL) {
             sw->bucket_start.tv_sec++;
             sw->bucket_start.tv_nsec -= 1000000000UL;
         }
@@ -65,9 +68,31 @@ stat_window_add(
 
         delta -= STAT_WINDOW_BUCKET_INTERVAL;
     }
+} /* stat_window_advance */
+
+
+static inline void
+stat_window_add(
+    struct stat_window *sw,
+    struct timespec    *current_time,
+    uint64_t            value)
+{
+
+    stat_window_advance(sw, current_time);
 
     sw->buckets[sw->current] += value;
     sw->count                += value;
 } /* stat_window_add */
+
+static inline uint64_t
+stat_window_get(
+    struct stat_window *sw,
+    struct timespec    *current_time)
+{
+    stat_window_advance(sw, current_time);
+
+    return sw->count;
+} /* stat_window_get_count */
+
 
 

@@ -12,7 +12,7 @@ RUN apt-get -y update && \
     apt-get -y --no-install-recommends upgrade && \
     apt-get -y --no-install-recommends install clang cmake ninja-build git lldb gdb less psmisc \
     uuid-dev libjansson-dev libclang-rt-18-dev llvm build-essential uthash-dev \
-    autoconf automake make libtool pkg-config ca-certificates libssl-dev \
+    autoconf automake make libtool pkg-config ca-certificates libssl-dev libnuma-dev  \
     libxxhash-dev liburcu-dev librdmacm-dev liburing-dev libunwind-dev flex bison libncurses-dev libcurl4-openssl-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -50,7 +50,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get -y update && \
     apt-get -y --no-install-recommends upgrade && \
     apt-get -y --no-install-recommends install libuuid1 librdmacm1 libjansson4 liburcu8t64 ibverbs-providers liburing2 libunwind8 \
-    libncurses6 libssl3t64 && \
+    libncurses6 libssl3t64 libnuma1 && \
     if [ "${BUILD_TYPE}" = "Debug" ]; then \
     apt-get -y --no-install-recommends install llvm gdb ; \
     fi && \

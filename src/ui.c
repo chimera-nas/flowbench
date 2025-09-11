@@ -23,8 +23,8 @@ ui_format_size(
     int         unit    = 0;
     double      size    = (double) bytes;
 
-    while (size >= 1024 && unit < 5) {
-        size /= 1024;
+    while (size >= 1000 && unit < 5) {
+        size /= 1000;
         unit++;
     }
     sprintf(out, "%.2f %s", size, units[unit]);
@@ -71,16 +71,19 @@ void
 display_flow_stats(
     int                    x,
     int                    y,
-    struct flowbench_flow *flow)
+    struct flowbench_flow *flow,
+    struct timespec       *now)
 {
-    char sent_size[20], recv_size[20], send_rate[20], recv_rate[20];
+    char     sent_size[20], recv_size[20], send_rate[20], recv_rate[20];
+    uint64_t sent_count, recv_count;
+
+    sent_count = stat_window_get(&flow->sent_bytes_window, now);
+    recv_count = stat_window_get(&flow->recv_bytes_window, now);
 
     ui_format_size(flow->sent_bytes, sent_size);
     ui_format_size(flow->recv_bytes, recv_size);
-    ui_format_throughput(flow->sent_bytes_window.count, STAT_WINDOW_INTERVAL,
-                         send_rate);
-    ui_format_throughput(flow->recv_bytes_window.count, STAT_WINDOW_INTERVAL,
-                         recv_rate);
+    ui_format_throughput(sent_count, STAT_WINDOW_INTERVAL, send_rate);
+    ui_format_throughput(recv_count, STAT_WINDOW_INTERVAL, recv_rate);
 
     mvprintw(y, x, "%s -> %s : %s @ %s TX |  %s @ %s RX",
              flow->src, flow->dst, sent_size, send_rate, recv_size, recv_rate);
@@ -183,6 +186,10 @@ update_screen(struct flowbench_stats *stats)
 
     int                    y;
 
+    struct timespec        now;
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
     pthread_mutex_lock(&stats->lock);
 
     clear();
@@ -190,12 +197,12 @@ update_screen(struct flowbench_stats *stats)
     y = 5;
     DL_FOREACH(stats->flows, flow)
     {
-        display_flow_stats(4, y, flow);
+        display_flow_stats(4, y, flow, &now);
         y++;
     }
 
     display_summary(stats);
-    //display_events(stats->events);
+    display_events(stats->events);
 
     pthread_mutex_unlock(&stats->lock);
 
