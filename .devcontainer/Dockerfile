@@ -28,9 +28,9 @@ RUN if [ "$ENABLE_XLIO" = "1" ] ; then \
     ./configure && \
     make -j8 && \
     make install && \
-    git clone https://github.com/Mellanox/libxlio.git /libxlio && \
+    git clone https://github.com/benjarvis/libxlio.git /libxlio && \
     cd /libxlio && \
-    git checkout 9877e909310cde1112744206cfeb04524910c758 && \
+    git checkout 3.60.2-nlfix && \
     ./autogen.sh && \
     ./configure --with-dpcp=/usr/local && \
     make -j8 && \

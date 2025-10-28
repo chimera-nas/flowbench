@@ -44,6 +44,7 @@ struct flowbench_evpl_state {
     struct flowbench_evpl_shared *shared;
     struct flowbench_stats       *stats;
     struct evpl_thread           *thread;
+    struct evpl_listener_binding *listen_binding;
     struct evpl                  *evpl;
 };
 
@@ -186,8 +187,8 @@ notify_callback(
         case EVPL_NOTIFY_RECV_DATA:
             do {
 
-                niovecs = evpl_readv(evpl, flow->bind, iovecs, 8, 4 * 1024 *
-                                     1024);
+                niovecs = evpl_recvv(evpl, flow->bind, iovecs, 8, 4 * 1024 *
+                                     1024, NULL);
 
                 for (i = 0; i < niovecs; ++i) {
                     flowbench_flow_add_recv_bytes(&flow->stats, &now, iovecs[i].length);
@@ -321,7 +322,8 @@ flowbench_evpl_thread_init(
     switch (config->role) {
         case FLOWBENCH_ROLE_SERVER:
             if (shared->connected) {
-                evpl_listener_attach(state->evpl, state->shared->listener, accept_callback, state);
+                state->listen_binding = evpl_listener_attach(state->evpl, state->shared->listener, accept_callback,
+                                                             state);
             } else {
                 flow = create_flow(state, config->local, config->
                                    local_port, config->peer, config->peer_port);
@@ -379,7 +381,7 @@ flowbench_evpl_thread_destroy(
     struct flowbench_config      *config = shared->config;
 
     if (config->role == FLOWBENCH_ROLE_SERVER && shared->connected) {
-        evpl_listener_detach(evpl, shared->listener);
+        evpl_listener_detach(evpl, state->listen_binding);
     }
 
 } /* flowbench_evpl_thread_destroy */
