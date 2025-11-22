@@ -28,6 +28,9 @@ endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_definitions(-O3)
+    add_definitions(-flto)
+    add_link_options(-flto)
+    #add_definitions(-fno-inline)
 endif()
 
 add_definitions(-g -Wall -Werror -Wno-unused-function)
@@ -36,6 +39,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ext/libevpl/include)
 include_directories(3rdparty)
 
 add_subdirectory(ext)
+
+add_definitions(-DXDR_CUSTOM_IOVEC=${CMAKE_CURRENT_SOURCE_DIR}/ext/libevpl/src/rpc2/xdr_iovec.h)
 add_subdirectory(src)
 
 execute_process(COMMAND ln -sf ${CMAKE_BINARY_DIR}/compile_commands.json ${CMAKE_SOURCE_DIR}/compile_commands.json)

@@ -21,6 +21,7 @@
 #include "framework.h"
 
 extern struct flowbench_framework framework_evpl;
+extern struct flowbench_framework framework_evpl_rpc2;
 
 int                               SigInt = 0;
 
@@ -224,6 +225,9 @@ main(
     switch (config.framework_id) {
         case FLOWBENCH_FRAMEWORK_EVPL:
             framework = &framework_evpl;
+            break;
+        case FLOWBENCH_FRAMEWORK_EVPL_RPC2:
+            framework = &framework_evpl_rpc2;
             break;
         default:
             fprintf(stderr, "Unknown framework %d", config.framework_id);

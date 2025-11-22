@@ -8,8 +8,9 @@
 #include <string.h>
 
 enum flowbench_framework_id {
-    FLOWBENCH_FRAMEWORK_INVALID = 0,
-    FLOWBENCH_FRAMEWORK_EVPL    = 1,
+    FLOWBENCH_FRAMEWORK_INVALID   = 0,
+    FLOWBENCH_FRAMEWORK_EVPL      = 1,
+    FLOWBENCH_FRAMEWORK_EVPL_RPC2 = 2,
 };
 
 enum flowbench_role {
@@ -69,6 +70,10 @@ map_framework(const char *name)
 {
     if (strcmp(name, "evpl") == 0) {
         return FLOWBENCH_FRAMEWORK_EVPL;
+    }
+
+    if (strcmp(name, "evpl_rpc2") == 0) {
+        return FLOWBENCH_FRAMEWORK_EVPL_RPC2;
     }
 
     return FLOWBENCH_FRAMEWORK_INVALID;
