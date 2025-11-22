@@ -132,7 +132,7 @@ flow_dispatch_callback(
 
     while (can_send(flow)) {
         if (config->test == FLOWBENCH_TEST_PINGPONG) {
-            clock_gettime(CLOCK_MONOTONIC, &flow->ping_times[flow->ping_head]);
+            evpl_get_hf_monotonic_time(evpl, &flow->ping_times[flow->ping_head]);
             flow->ping_slots[flow->ping_head] = 1;
             flow->ping_head                   = (flow->ping_head + 1) & flow->ping_ring_mask;
             flow->inflight_pings++;
@@ -166,7 +166,7 @@ notify_callback(
     struct timespec                now;
     int                            niovecs, i;
 
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    evpl_get_hf_monotonic_time(evpl, &now);
 
     switch (notify->notify_type) {
         case EVPL_NOTIFY_CONNECTED:
@@ -211,6 +211,7 @@ notify_callback(
                         flow->inflight_pings--;
                     }
                     evpl_defer(state->evpl, &flow->dispatch);
+
                 } else {
                     evpl_iovec_addref(&flow->iovec);
                     if (shared->connected) {
@@ -220,6 +221,10 @@ notify_callback(
                                      &flow->iovec, 1, notify->recv_msg.length);
                     }
                 }
+            }
+
+            for (i = 0; i < notify->recv_msg.niov; ++i) {
+                evpl_iovec_release(&notify->recv_msg.iovec[i]);
             }
 
             break;

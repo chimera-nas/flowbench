@@ -2,9 +2,6 @@
   "cmake.buildDirectory": "/build/${buildType}",
   "cmake.saveBeforeBuild": true,
   "cmake.generator": "Ninja",
-  "cmake.configureSettings": {
-    "CMAKE_C_COMPILER": "clang"
-  },
   "cmake.configureArgs": [
     "-DCMAKE_EXPORT_COMPILE_COMMANDS=1"
   ],
