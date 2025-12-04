@@ -117,15 +117,21 @@ rpc2_recv_call_pingpong_callback(
     struct flowbench_evpl_state  *state  = private_data;
     struct flowbench_evpl_shared *shared = state->shared;
     struct Pong                   pong;
+    int                           rc;
 
     pong.data.iov    = &state->iovec;
     pong.data.niov   = 1;
     pong.data.length = state->iovec.length;
     evpl_iovec_addref(&state->iovec);
 
-    shared->flowbench_program.send_reply_pingpong(state->evpl,
-                                                  &pong,
-                                                  msg);
+    rc = shared->flowbench_program.send_reply_pingpong(state->evpl,
+                                                       &pong,
+                                                       msg);
+
+    if (unlikely(rc)) {
+        fprintf(stderr, "Failed to send reply for pingpong: %d\n", rc);
+        exit(1);
+    }
 
 } /* rpc2_recv_call_pingpong_callback */
 
@@ -139,9 +145,15 @@ rpc2_recv_call_datagram_callback(
 {
     struct flowbench_evpl_state  *state  = private_data;
     struct flowbench_evpl_shared *shared = state->shared;
+    int                           rc;
 
-    shared->flowbench_program.send_reply_datagram(state->evpl,
-                                                  msg);
+    rc = shared->flowbench_program.send_reply_datagram(state->evpl,
+                                                       msg);
+
+    if (unlikely(rc)) {
+        fprintf(stderr, "Failed to send reply for datagram: %d\n", rc);
+        exit(1);
+    }
 
 } /* rpc2_recv_call_datagram_callback */
 
