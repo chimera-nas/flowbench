@@ -141,9 +141,10 @@ flow_dispatch_callback(
         evpl_iovec_addref(&flow->iovec);
 
         if (shared->connected) {
-            evpl_sendv(evpl, flow->bind, &flow->iovec, 1, config->msg_size);
+            evpl_sendv(evpl, flow->bind, &flow->iovec, 1, config->msg_size, EVPL_SEND_FLAG_TAKE_REF);
         } else {
-            evpl_sendtoepv(evpl, flow->bind, shared->remote, &flow->iovec, 1, config->msg_size);
+            evpl_sendtoepv(evpl, flow->bind, shared->remote, &flow->iovec, 1, config->msg_size, EVPL_SEND_FLAG_TAKE_REF)
+            ;
         }
 
         flow->inflight_bytes += config->msg_size;
@@ -215,10 +216,10 @@ notify_callback(
                 } else {
                     evpl_iovec_addref(&flow->iovec);
                     if (shared->connected) {
-                        evpl_sendv(evpl, flow->bind, &flow->iovec, 1, notify->recv_msg.length);
+                        evpl_sendv(evpl, flow->bind, &flow->iovec, 1, notify->recv_msg.length, EVPL_SEND_FLAG_TAKE_REF);
                     } else {
                         evpl_sendtov(evpl, flow->bind, notify->recv_msg.addr,
-                                     &flow->iovec, 1, notify->recv_msg.length);
+                                     &flow->iovec, 1, notify->recv_msg.length, EVPL_SEND_FLAG_TAKE_REF);
                     }
                 }
             }
@@ -474,6 +475,7 @@ flowbench_evpl_start(void *private_data)
                     shared->protocol  = EVPL_STREAM_RDMACM_RC;
                     shared->stream    = 1;
                     shared->connected = 1;
+                    break;
                 case FLOWBENCH_PROTO_XLIO_TCP:
                     shared->protocol  = EVPL_STREAM_XLIO_TCP;
                     shared->stream    = 1;
