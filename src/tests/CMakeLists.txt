@@ -34,6 +34,24 @@ add_test(NAME flowbench/pingpong_rpc2_tcp_msg COMMAND ${FLOWBENCH_WRAP} ${FLOWBE
         "-f evpl_rpc2 -Q -t pingpong -m msg -p tcp -s 64 -d 5"
         "-f evpl_rpc2 -Q -t pingpong -m msg -p tcp -s 64 -d 5 -a 127.0.0.1:32500")
 
+add_test(NAME flowbench/pingpong_rpc2_tcp_msg_reverse COMMAND ${FLOWBENCH_WRAP} ${FLOWBENCH_RUN} ${FLOWBENCH_BIN} 
+        "-f evpl_rpc2 -Q -t pingpong -m msg -p tcp -s 64 -d 5 -R"
+        "-f evpl_rpc2 -Q -t pingpong -m msg -p tcp -s 64 -d 5 -R -a 127.0.0.1:32500")
+
+
+add_test(NAME flowbench/pingpong_rpc2_tcp_msg_bidirectional COMMAND ${FLOWBENCH_WRAP} ${FLOWBENCH_RUN} ${FLOWBENCH_BIN} 
+        "-f evpl_rpc2 -Q -t pingpong -m msg -p tcp -s 64 -d 5 -B"
+        "-f evpl_rpc2 -Q -t pingpong -m msg -p tcp -s 64 -d 5 -B -a 127.0.0.1:32500")
+
+
 add_test(NAME flowbench/throughput_rpc2_tcp_msg COMMAND ${FLOWBENCH_WRAP} ${FLOWBENCH_RUN} ${FLOWBENCH_BIN} 
         "-f evpl_rpc2 -Q -t throughput -m msg -s 1m -p tcp -d 5"
         "-f evpl_rpc2 -Q -t throughput -m msg -s 1m -p tcp -d 5 -a 127.0.0.1:32500")
+
+add_test(NAME flowbench/throughput_rpc2_tcp_msg_reverse COMMAND ${FLOWBENCH_WRAP} ${FLOWBENCH_RUN} ${FLOWBENCH_BIN} 
+        "-f evpl_rpc2 -Q -t throughput -m msg -s 1m -p tcp -d 5 -R"
+        "-f evpl_rpc2 -Q -t throughput -m msg -s 1m -p tcp -d 5 -R -a 127.0.0.1:32500")
+
+add_test(NAME flowbench/throughput_rpc2_tcp_msg_bidirectional COMMAND ${FLOWBENCH_WRAP} ${FLOWBENCH_RUN} ${FLOWBENCH_BIN} 
+        "-f evpl_rpc2 -Q -t throughput -m msg -s 1m -p tcp -d 5 -B"
+        "-f evpl_rpc2 -Q -t throughput -m msg -s 1m -p tcp -d 5 -B -a 127.0.0.1:32500")

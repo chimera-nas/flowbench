@@ -19,19 +19,25 @@ server_pid=$!
 sleep 5
 
 # Start client
-$FLOWBENCH -r client $CLIENT_ARGS &
-client_pid=$!
-
-wait $client_pid
+$FLOWBENCH -r client $CLIENT_ARGS
 client_status=$?
+
+echo Stopping server
 
 kill -INT $server_pid
 wait $server_pid
 server_status=$?
 
+rc=0
+
 # Test passes only if both processes exit with 0
-if [ $server_status -eq 0 ] && [ $client_status -eq 0 ]; then
-    exit 0
-else
-    exit 1
+if [ $server_status -ne 0 ]; then
+    echo "Server failed with status $server_status"
+    rc=1
 fi
+
+if [ $client_status -ne 0 ]; then
+    echo "Client failed with status $client_status"
+    rc=1
+fi
+exit $rc

@@ -7,9 +7,7 @@
 NETNS_NAME="flowbench_ns_$(date +%s%N)_$RANDOM"
 
 cleanup() {
-    if ip netns list | grep -q "^${NETNS_NAME}"; then
-        ip netns delete "${NETNS_NAME}" 2>/dev/null || true
-    fi
+    ip netns delete "${NETNS_NAME}" 2>/dev/null || true
 }
 
 trap cleanup EXIT
