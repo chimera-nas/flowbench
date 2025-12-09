@@ -114,7 +114,8 @@ rpc2_recv_call_pingpong_callback(
     struct evpl_rpc2_msg  *msg,
     void                  *private_data)
 {
-    struct flowbench_evpl_state  *state  = private_data;
+    struct flowbench_evpl_flow   *flow   = private_data;
+    struct flowbench_evpl_state  *state  = flow->state;
     struct flowbench_evpl_shared *shared = state->shared;
     struct Pong                   pong;
     int                           rc;
@@ -143,9 +144,16 @@ rpc2_recv_call_datagram_callback(
     struct evpl_rpc2_msg  *msg,
     void                  *private_data)
 {
-    struct flowbench_evpl_state  *state  = private_data;
+    struct flowbench_evpl_flow   *flow   = private_data;
+    struct flowbench_evpl_state  *state  = flow->state;
     struct flowbench_evpl_shared *shared = state->shared;
     int                           rc;
+    struct timespec               now;
+
+    evpl_get_hf_monotonic_time(evpl, &now);
+
+    flowbench_flow_add_recv_bytes(&flow->stats, &now, request->data.length);
+    flowbench_flow_add_recv_msgs(&flow->stats, &now, 1);
 
     rc = shared->flowbench_program.send_reply_datagram(state->evpl,
                                                        msg);
@@ -232,8 +240,15 @@ rpc2_flow_dispatch_callback(
     const struct flowbench_config *config = shared->config;
     struct Ping                    ping;
     struct Datagram                datagram;
+    int                            ddp             = 0;
+    int                            max_write_chunk = 0;
 
-    if (unlikely(flow->conn == NULL)) {
+    if (config->msg_size > 4096) {
+        ddp             = 1;
+        max_write_chunk = config->msg_size;
+    }
+
+    if (unlikely(!flow->conn)) {
         return;
     }
 
@@ -253,8 +268,8 @@ rpc2_flow_dispatch_callback(
                                                          evpl,
                                                          flow->conn,
                                                          &ping,
-                                                         0,
-                                                         0,
+                                                         ddp,
+                                                         max_write_chunk,
                                                          0,
                                                          rpc2_recv_reply_pingpong_callback,
                                                          flow);
@@ -284,10 +299,9 @@ rpc2_flow_dispatch_callback(
 } /* flow_dispatch_callback */
 
 
-static void
+static struct flowbench_evpl_flow *
 rpc2_create_flow(
     struct flowbench_evpl_state *state,
-    struct evpl_rpc2_conn       *conn,
     const char                  *srcaddr,
     int                          srcport,
     const char                  *dstaddr,
@@ -304,7 +318,6 @@ rpc2_create_flow(
     snprintf(flow->stats.dst, sizeof(flow->stats.dst), "%s:%d", dstaddr, dstport);
 
     flow->state = state;
-    flow->conn  = conn;
 
     DL_APPEND(state->flows, flow);
 
@@ -324,11 +337,23 @@ rpc2_create_flow(
 
     flowbench_add_flow(state->stats, &flow->stats);
 
+    return flow;
+
+} /* create_flow */
+
+static void
+rpc2_connect_flow(
+    struct flowbench_evpl_state *state,
+    struct flowbench_evpl_flow  *flow,
+    struct evpl_rpc2_conn       *conn)
+{
+
+    flow->conn = conn;
+
     evpl_deferral_init(&flow->dispatch, rpc2_flow_dispatch_callback, flow);
 
     evpl_defer(state->evpl, &flow->dispatch);
-
-} /* create_flow */
+} /* rpc2_connect_flow */
 
 static void
 rpc2_notify_callback(
@@ -344,41 +369,23 @@ rpc2_notify_callback(
 
     switch (notify->notify_type) {
         case EVPL_RPC2_NOTIFY_ACCEPTED:
-            rpc2_create_flow(state, conn, config->local, config->
-                             local_port, config->peer, config->
-                             peer_port);
+            flow = rpc2_create_flow(state, config->local, config->
+                                    local_port, config->peer, config->
+                                    peer_port);
+
+            conn->server_private_data = flow;
+
+            rpc2_connect_flow(state, flow, conn);
+
             break;
         case EVPL_RPC2_NOTIFY_CONNECTED:
-
-            DL_FOREACH(state->flows, flow)
-            {
-                if (flow->conn == conn) {
-                    break;
-                }
-            }
-
-            if (flow == NULL) {
-                fprintf(stderr, "Connection established but flow not found\n");
-                exit(1);
-            }
-
+            flow            = conn->server_private_data;
             flow->connected = 1;
             evpl_defer(state->evpl, &flow->dispatch);
             break;
         case EVPL_RPC2_NOTIFY_DISCONNECTED:
-            DL_FOREACH(state->flows, flow)
-            {
-                if (flow->conn == conn) {
-                    break;
-                }
-            }
-
-            if (flow == NULL) {
-                fprintf(stderr, "Connection terminated but flow not found\n");
-                exit(1);
-            }
+            flow = conn->server_private_data;
             flowbench_remove_flow(state->stats, &flow->stats);
-
 
             DL_DELETE(state->flows, flow);
             free(flow->ping_times);
@@ -399,6 +406,7 @@ flowbench_evpl_rpc2_thread_init(
     struct flowbench_evpl_shared  *shared = state->shared;
     const struct flowbench_config *config = shared->config;
     struct evpl_rpc2_conn         *conn;
+    struct flowbench_evpl_flow    *flow;
     struct evpl_rpc2_program      *programs[1];
 
     state->evpl = evpl;
@@ -418,13 +426,16 @@ flowbench_evpl_rpc2_thread_init(
         case FLOWBENCH_ROLE_CLIENT:
 
 
+            flow = rpc2_create_flow(state, config->local, config->
+                                    local_port, config->peer, config->
+                                    peer_port);
+
             conn = evpl_rpc2_client_connect(state->rpc2_thread,
                                             shared->protocol,
-                                            state->shared->remote);
+                                            state->shared->remote,
+                                            programs, 1, flow);
 
-            rpc2_create_flow(state, conn, config->local, config->
-                             local_port, config->peer, config->
-                             peer_port);
+            rpc2_connect_flow(state, flow, conn);
 
             break;
         default:
@@ -476,7 +487,7 @@ flowbench_evpl_rpc2_init(
 
     evpl_global_config_set_rdmacm_tos(evpl_config, 104);
     evpl_global_config_set_rdmacm_srq_prefill(evpl_config, 1);
-    evpl_global_config_set_max_datagram_size(evpl_config, 4096);
+    evpl_global_config_set_max_datagram_size(evpl_config, 4096 + 256);
     evpl_global_config_set_tls_verify_peer(evpl_config, 0);
 
     evpl_init(evpl_config);

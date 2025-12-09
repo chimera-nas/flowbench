@@ -72,7 +72,6 @@ main(
     uint64_t                    elapsed;
 
     signal(SIGINT, sigint_handler);
-    signal(SIGPIPE, SIG_IGN);
 
     config.framework_id       = FLOWBENCH_FRAMEWORK_EVPL;
     config.role               = FLOWBENCH_ROLE_SERVER;
