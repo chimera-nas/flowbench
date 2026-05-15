@@ -64,7 +64,7 @@ struct flowbench_evpl_shared {
 void
 close_flow(struct flowbench_evpl_flow *flow)
 {
-    evpl_iovec_release(&flow->iovec);
+    evpl_iovec_release(flow->state->evpl, &flow->iovec);
     if (flow->ping_times) {
         free(flow->ping_times);
     }
@@ -131,6 +131,8 @@ flow_dispatch_callback(
     }
 
     while (can_send(flow)) {
+        struct evpl_iovec send_iov;
+
         if (config->test == FLOWBENCH_TEST_PINGPONG) {
             evpl_get_hf_monotonic_time(evpl, &flow->ping_times[flow->ping_head]);
             flow->ping_slots[flow->ping_head] = 1;
@@ -138,12 +140,12 @@ flow_dispatch_callback(
             flow->inflight_pings++;
         }
 
-        evpl_iovec_addref(&flow->iovec);
+        evpl_iovec_clone(&send_iov, &flow->iovec);
 
         if (shared->connected) {
-            evpl_sendv(evpl, flow->bind, &flow->iovec, 1, config->msg_size, EVPL_SEND_FLAG_TAKE_REF);
+            evpl_sendv(evpl, flow->bind, &send_iov, 1, config->msg_size, EVPL_SEND_FLAG_TAKE_REF);
         } else {
-            evpl_sendtoepv(evpl, flow->bind, shared->remote, &flow->iovec, 1, config->msg_size, EVPL_SEND_FLAG_TAKE_REF)
+            evpl_sendtoepv(evpl, flow->bind, shared->remote, &send_iov, 1, config->msg_size, EVPL_SEND_FLAG_TAKE_REF)
             ;
         }
 
@@ -193,7 +195,7 @@ notify_callback(
 
                 for (i = 0; i < niovecs; ++i) {
                     flowbench_flow_add_recv_bytes(&flow->stats, &now, iovecs[i].length);
-                    evpl_iovec_release(&iovecs[i]);
+                    evpl_iovec_release(evpl, &iovecs[i]);
                 }
 
             } while (niovecs);
@@ -214,18 +216,19 @@ notify_callback(
                     evpl_defer(state->evpl, &flow->dispatch);
 
                 } else {
-                    evpl_iovec_addref(&flow->iovec);
+                    struct evpl_iovec send_iov;
+                    evpl_iovec_clone(&send_iov, &flow->iovec);
                     if (shared->connected) {
-                        evpl_sendv(evpl, flow->bind, &flow->iovec, 1, notify->recv_msg.length, EVPL_SEND_FLAG_TAKE_REF);
+                        evpl_sendv(evpl, flow->bind, &send_iov, 1, notify->recv_msg.length, EVPL_SEND_FLAG_TAKE_REF);
                     } else {
                         evpl_sendtov(evpl, flow->bind, notify->recv_msg.addr,
-                                     &flow->iovec, 1, notify->recv_msg.length, EVPL_SEND_FLAG_TAKE_REF);
+                                     &send_iov, 1, notify->recv_msg.length, EVPL_SEND_FLAG_TAKE_REF);
                     }
                 }
             }
 
             for (i = 0; i < notify->recv_msg.niov; ++i) {
-                evpl_iovec_release(&notify->recv_msg.iovec[i]);
+                evpl_iovec_release(evpl, &notify->recv_msg.iovec[i]);
             }
 
             break;
@@ -269,7 +272,7 @@ create_flow(
         flow->ping_tail      = 0;
     }
 
-    evpl_iovec_alloc(state->evpl, config->msg_size, 4096, 1, &flow->iovec);
+    evpl_iovec_alloc(state->evpl, config->msg_size, 4096, 1, 0, &flow->iovec);
 
     flowbench_add_flow(state->stats, &flow->stats);
 

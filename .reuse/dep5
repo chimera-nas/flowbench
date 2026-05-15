@@ -1,0 +1,13 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: flowbench
+Upstream-Contact: Ben Jarvis
+Source: https://github.com/chimera-nas/flowbench
+
+# Config files that cannot carry an inline SPDX header
+Files: .claude/settings.json
+       .devcontainer/devcontainer.json
+       .vscode/settings.json
+       .vscode/tasks.json
+       docs/Gemfile.lock
+Copyright: 2025 Ben Jarvis
+License: Unlicense

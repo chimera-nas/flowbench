@@ -108,26 +108,30 @@ rpc2_can_send(struct flowbench_evpl_flow *flow)
 
 static void
 rpc2_recv_call_pingpong_callback(
-    struct evpl           *evpl,
-    struct evpl_rpc2_conn *conn,
-    struct Ping           *ping,
-    struct evpl_rpc2_msg  *msg,
-    void                  *private_data)
+    struct evpl               *evpl,
+    struct evpl_rpc2_conn     *conn,
+    struct evpl_rpc2_cred     *cred,
+    struct Ping               *ping,
+    struct evpl_rpc2_encoding *encoding,
+    void                      *private_data)
 {
     struct flowbench_evpl_flow   *flow   = private_data;
     struct flowbench_evpl_state  *state  = flow->state;
     struct flowbench_evpl_shared *shared = state->shared;
     struct Pong                   pong;
+    struct evpl_iovec             reply_iov;
     int                           rc;
 
-    pong.data.iov    = &state->iovec;
-    pong.data.niov   = 1;
-    pong.data.length = state->iovec.length;
-    evpl_iovec_addref(&state->iovec);
+    evpl_rpc2_encoding_take_read_chunk(encoding, NULL, NULL);
+    evpl_iovecs_release(evpl, ping->data.iov, ping->data.niov);
+
+    evpl_iovec_clone(&reply_iov, &state->iovec);
+    xdr_set_ref(&pong, data, &reply_iov, 1, state->iovec.length);
 
     rc = shared->flowbench_program.send_reply_pingpong(state->evpl,
+                                                       NULL,
                                                        &pong,
-                                                       msg);
+                                                       encoding);
 
     if (unlikely(rc)) {
         fprintf(stderr, "Failed to send reply for pingpong: %d\n", rc);
@@ -138,11 +142,12 @@ rpc2_recv_call_pingpong_callback(
 
 static void
 rpc2_recv_call_datagram_callback(
-    struct evpl           *evpl,
-    struct evpl_rpc2_conn *conn,
-    struct Datagram       *request,
-    struct evpl_rpc2_msg  *msg,
-    void                  *private_data)
+    struct evpl               *evpl,
+    struct evpl_rpc2_conn     *conn,
+    struct evpl_rpc2_cred     *cred,
+    struct Datagram           *request,
+    struct evpl_rpc2_encoding *encoding,
+    void                      *private_data)
 {
     struct flowbench_evpl_flow   *flow   = private_data;
     struct flowbench_evpl_state  *state  = flow->state;
@@ -155,8 +160,12 @@ rpc2_recv_call_datagram_callback(
     flowbench_flow_add_recv_bytes(&flow->stats, &now, request->data.length);
     flowbench_flow_add_recv_msgs(&flow->stats, &now, 1);
 
+    evpl_rpc2_encoding_take_read_chunk(encoding, NULL, NULL);
+    evpl_iovecs_release(evpl, request->data.iov, request->data.niov);
+
     rc = shared->flowbench_program.send_reply_datagram(state->evpl,
-                                                       msg);
+                                                       NULL,
+                                                       encoding);
 
     if (unlikely(rc)) {
         fprintf(stderr, "Failed to send reply for datagram: %d\n", rc);
@@ -167,10 +176,11 @@ rpc2_recv_call_datagram_callback(
 
 static void
 rpc2_recv_reply_pingpong_callback(
-    struct evpl *evpl,
-    struct Pong *reply,
-    int          status,
-    void        *private_data)
+    struct evpl                 *evpl,
+    const struct evpl_rpc2_verf *verf,
+    struct Pong                 *reply,
+    int                          status,
+    void                        *private_data)
 {
     struct flowbench_evpl_flow  *flow  = private_data;
     struct flowbench_evpl_state *state = flow->state;
@@ -191,6 +201,8 @@ rpc2_recv_reply_pingpong_callback(
     flow->inflight_msgs  -= 1;
     flow->inflight_pings--;
 
+    evpl_iovecs_release(evpl, reply->data.iov, reply->data.niov);
+
     if (flow->ping_slots[flow->ping_tail]) {
         flowbench_flow_add_latency(&flow->stats,
                                    ts_interval(&now, &flow->ping_times[flow->ping_tail]));
@@ -205,9 +217,10 @@ rpc2_recv_reply_pingpong_callback(
 
 static void
 rpc2_recv_reply_datagram_callback(
-    struct evpl *evpl,
-    int          status,
-    void        *private_data)
+    struct evpl                 *evpl,
+    const struct evpl_rpc2_verf *verf,
+    int                          status,
+    void                        *private_data)
 {
     struct flowbench_evpl_flow    *flow   = private_data;
     struct flowbench_evpl_state   *state  = flow->state;
@@ -253,20 +266,22 @@ rpc2_flow_dispatch_callback(
     }
 
     while (rpc2_can_send(flow)) {
+        struct evpl_iovec send_iov;
+
+        evpl_iovec_clone(&send_iov, &state->iovec);
+
         if (config->test == FLOWBENCH_TEST_PINGPONG) {
             evpl_get_hf_monotonic_time(evpl, &flow->ping_times[flow->ping_head]);
             flow->ping_slots[flow->ping_head] = 1;
             flow->ping_head                   = (flow->ping_head + 1) & flow->ping_ring_mask;
             flow->inflight_pings++;
 
-            ping.data.iov    = &state->iovec;
-            ping.data.niov   = 1;
-            ping.data.length = config->msg_size;
-            evpl_iovec_addref(&state->iovec);
+            xdr_set_ref(&ping, data, &send_iov, 1, config->msg_size);
 
             shared->flowbench_program.send_call_pingpong(&shared->flowbench_program.rpc2,
                                                          evpl,
                                                          flow->conn,
+                                                         NULL,
                                                          &ping,
                                                          ddp,
                                                          max_write_chunk,
@@ -276,15 +291,12 @@ rpc2_flow_dispatch_callback(
 
         } else {
 
-            datagram.data.iov    = &state->iovec;
-            datagram.data.niov   = 1;
-            datagram.data.length = config->msg_size;
-
-            evpl_iovec_addref(&state->iovec);
+            xdr_set_ref(&datagram, data, &send_iov, 1, config->msg_size);
 
             shared->flowbench_program.send_call_datagram(&shared->flowbench_program.rpc2,
                                                          evpl,
                                                          flow->conn,
+                                                         NULL,
                                                          &datagram,
                                                          1,
                                                          0,
@@ -411,7 +423,7 @@ flowbench_evpl_rpc2_thread_init(
 
     state->evpl = evpl;
 
-    evpl_iovec_alloc(state->evpl, config->msg_size, 4096, 1, &state->iovec);
+    evpl_iovec_alloc(state->evpl, config->msg_size, 4096, 1, 0, &state->iovec);
 
     programs[0] = &shared->flowbench_program.rpc2;
 
@@ -461,7 +473,7 @@ flowbench_evpl_rpc2_thread_destroy(
 
     evpl_rpc2_thread_destroy(state->rpc2_thread);
 
-    evpl_iovec_release(&state->iovec);
+    evpl_iovec_release(evpl, &state->iovec);
 
 
 } /* flowbench_evpl_thread_destroy */
