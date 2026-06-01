@@ -285,6 +285,8 @@ rpc2_flow_dispatch_callback(
                                                          &ping,
                                                          ddp,
                                                          max_write_chunk,
+                                                         NULL,
+                                                         0,
                                                          0,
                                                          rpc2_recv_reply_pingpong_callback,
                                                          flow);
@@ -299,6 +301,8 @@ rpc2_flow_dispatch_callback(
                                                          NULL,
                                                          &datagram,
                                                          1,
+                                                         0,
+                                                         NULL,
                                                          0,
                                                          0,
                                                          rpc2_recv_reply_datagram_callback,
