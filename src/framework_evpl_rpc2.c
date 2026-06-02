@@ -91,7 +91,7 @@ rpc2_can_send(struct flowbench_evpl_flow *flow)
             if ((config->role == FLOWBENCH_ROLE_CLIENT && !config->reverse) ||
                 (config->role == FLOWBENCH_ROLE_SERVER && config->reverse) ||
                 config->bidirectional) {
-                return (flow->inflight_msgs < config->max_inflight);
+                return (flow->connected && flow->inflight_msgs < config->max_inflight);
             } else {
                 return 0;
             }
