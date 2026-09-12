@@ -51,3 +51,8 @@ macOS supports the TCP and UDP socket benchmarks through libevpl's kqueue
 backend. RDMA and XLIO require their supported platforms and hardware.
 Internal duration, latency, and bandwidth-window timing uses the same
 header-only stopwatch dependency as libevpl.
+
+CI covers Debug and Release builds on Ubuntu 24.04, Ubuntu 26.04, Rocky Linux
+9/10, and macOS. The Ubuntu 26.04 and Rocky jobs use amd64 containers with
+distro compilers and dependencies, then run the full Flowbench test suite in
+isolated network namespaces. Their JUnit results are uploaded as CI artifacts.
