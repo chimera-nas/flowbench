@@ -6,6 +6,9 @@ cmake_minimum_required(VERSION 3.22)
 
 project(flowbench C)
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
 enable_testing()
 
 if (NOT FLOWBENCH_VERSION)
@@ -24,7 +27,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-fsanitize=address -fno-omit-frame-pointer
                     -fno-optimize-sibling-calls -fstack-protector-all)
     add_link_options(-fsanitize=address)
-    add_definitions(-DEVPL_IOVEC_TRACE=1)
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")

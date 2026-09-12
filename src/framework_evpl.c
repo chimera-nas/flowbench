@@ -31,7 +31,7 @@ struct flowbench_evpl_flow {
     uint64_t                     inflight_msgs;
     uint64_t                     inflight_bytes;
     uint64_t                     inflight_pings;
-    struct timespec             *ping_times;
+    uint64_t                    *ping_times;
     int                         *ping_slots;
     int                          ping_head;
     int                          ping_tail;
@@ -109,7 +109,8 @@ can_send(struct flowbench_evpl_flow *flow)
             if (config->role == FLOWBENCH_ROLE_SERVER) {
                 return 0;
             } else {
-                return (flow->connected && flow->inflight_pings < config->max_inflight);
+                return ((!shared->connected || flow->connected) &&
+                        flow->inflight_pings < config->max_inflight);
             }
         default:
             return 0;
@@ -134,7 +135,7 @@ flow_dispatch_callback(
         struct evpl_iovec send_iov;
 
         if (config->test == FLOWBENCH_TEST_PINGPONG) {
-            evpl_get_hf_monotonic_time(evpl, &flow->ping_times[flow->ping_head]);
+            flow->ping_times[flow->ping_head] = flowbench_now_ns();
             flow->ping_slots[flow->ping_head] = 1;
             flow->ping_head                   = (flow->ping_head + 1) & flow->ping_ring_mask;
             flow->inflight_pings++;
@@ -166,10 +167,10 @@ notify_callback(
     struct flowbench_evpl_shared  *shared = state->shared;
     const struct flowbench_config *config = shared->config;
     struct evpl_iovec              iovecs[8];
-    struct timespec                now;
+    uint64_t                       now;
     int                            niovecs, i;
 
-    evpl_get_hf_monotonic_time(evpl, &now);
+    now = flowbench_now_ns();
 
     switch (notify->notify_type) {
         case EVPL_NOTIFY_CONNECTED:
@@ -177,12 +178,13 @@ notify_callback(
             evpl_defer(state->evpl, &flow->dispatch);
             break;
         case EVPL_NOTIFY_DISCONNECTED:
+            evpl_remove_deferral(evpl, &flow->dispatch);
             flowbench_remove_flow(state->stats, &flow->stats);
             close_flow(flow);
             break;
         case EVPL_NOTIFY_SENT:
-            flowbench_flow_add_sent_bytes(&flow->stats, &now, notify->sent.bytes);
-            flowbench_flow_add_sent_msgs(&flow->stats, &now, notify->sent.msgs);
+            flowbench_flow_add_sent_bytes(&flow->stats, now, notify->sent.bytes);
+            flowbench_flow_add_sent_msgs(&flow->stats, now, notify->sent.msgs);
             flow->inflight_bytes -= notify->sent.bytes;
             flow->inflight_msgs  -= notify->sent.msgs;
             evpl_defer(state->evpl, &flow->dispatch);
@@ -194,21 +196,21 @@ notify_callback(
                                      1024, NULL);
 
                 for (i = 0; i < niovecs; ++i) {
-                    flowbench_flow_add_recv_bytes(&flow->stats, &now, iovecs[i].length);
+                    flowbench_flow_add_recv_bytes(&flow->stats, now, iovecs[i].length);
                     evpl_iovec_release(evpl, &iovecs[i]);
                 }
 
             } while (niovecs);
             break;
         case EVPL_NOTIFY_RECV_MSG:
-            flowbench_flow_add_recv_bytes(&flow->stats, &now, notify->recv_msg.length);
-            flowbench_flow_add_recv_msgs(&flow->stats, &now, 1);
+            flowbench_flow_add_recv_bytes(&flow->stats, now, notify->recv_msg.length);
+            flowbench_flow_add_recv_msgs(&flow->stats, now, 1);
 
             if (config->test == FLOWBENCH_TEST_PINGPONG) {
                 if (config->role == FLOWBENCH_ROLE_CLIENT) {
                     if (flow->ping_slots[flow->ping_tail]) {
                         flowbench_flow_add_latency(&flow->stats,
-                                                   ts_interval(&now, &flow->ping_times[flow->ping_tail]));
+                                                   flowbench_interval_ns(now, flow->ping_times[flow->ping_tail]));
                         flow->ping_slots[flow->ping_tail] = 0;
                         flow->ping_tail                   = (flow->ping_tail + 1) & flow->ping_ring_mask;
                         flow->inflight_pings--;
@@ -265,7 +267,7 @@ create_flow(
             ping_ring_size <<= 1;
         }
 
-        flow->ping_times     = calloc(ping_ring_size, sizeof(struct timespec));
+        flow->ping_times     = calloc(ping_ring_size, sizeof(uint64_t));
         flow->ping_slots     = calloc(ping_ring_size, sizeof(int));
         flow->ping_ring_mask = ping_ring_size - 1;
         flow->ping_head      = 0;

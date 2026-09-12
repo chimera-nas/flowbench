@@ -16,15 +16,25 @@ add_custom_command(
     COMMENT "Compiling ${XDR_X} with server and client support"
 )
 
+set(XDR_WARN_FLAGS -Wno-unused)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    list(APPEND XDR_WARN_FLAGS -Wno-format-truncation)
+endif()
+
 set_source_files_properties(
-    ${XDR_C} PROPERTIES COMPILE_OPTIONS "-Wno-unused;-Wno-format-truncation"
+    ${XDR_C} PROPERTIES COMPILE_OPTIONS "${XDR_WARN_FLAGS}"
 )
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-add_executable(flowbench flowbench.c ui.c framework_evpl.c framework_evpl_rpc2.c ${XDR_C} ${XDR_H})
+add_executable(flowbench flowbench.c timing.c ui.c framework_evpl.c framework_evpl_rpc2.c ${XDR_C} ${XDR_H})
 
-target_link_libraries(flowbench evpl evpl_rpc2 ncurses pthread)
+find_package(Curses REQUIRED)
+find_package(Threads REQUIRED)
+find_path(UTHASH_INCLUDE_DIR utlist.h HINTS /opt/homebrew/include /usr/local/include REQUIRED)
+target_include_directories(flowbench PRIVATE ${CURSES_INCLUDE_DIRS} ${UTHASH_INCLUDE_DIR})
+# libevpl exports its stopwatch headers and iovec compile definitions.
+target_link_libraries(flowbench evpl evpl_rpc2 ${CURSES_LIBRARIES} Threads::Threads)
 
 set_target_properties(flowbench PROPERTIES
     INSTALL_RPATH "/usr/local/lib"

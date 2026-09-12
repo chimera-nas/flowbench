@@ -34,3 +34,31 @@ jobs:
           working-directory: '${{ github.workspace }}/docs'
       - name: Build with Jekyll
         run: bundle exec jekyll build
+
+  native:
+    name: ${{ matrix.os }} / ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+        build_type: [Debug, Release]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build flex bison libncurses-dev libnuma-dev libssl-dev uthash-dev libcurl4-openssl-dev
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja openssl@3 uthash
+      - name: Configure
+        run: cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Build
+        run: cmake --build build/native --parallel
+      - name: Test Flowbench
+        run: ctest --test-dir build/native -R '^flowbench/' --output-on-failure
