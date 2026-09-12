@@ -3,7 +3,11 @@
 # SPDX-License-Identifier: LGPL-2.1-only
 
 set(FLOWBENCH_RUN ${CMAKE_CURRENT_SOURCE_DIR}/run_test.sh)
-set(FLOWBENCH_WRAP ${CMAKE_CURRENT_SOURCE_DIR}/wrap_test.sh)
+if(LIBEVPL_NETNS_TESTING)
+    set(FLOWBENCH_WRAP ${CMAKE_CURRENT_SOURCE_DIR}/wrap_test.sh)
+else()
+    set(FLOWBENCH_WRAP)
+endif()
 
 
 add_test(NAME flowbench/show_version COMMAND ${FLOWBENCH_BIN} -v)
@@ -55,3 +59,21 @@ add_test(NAME flowbench/throughput_rpc2_tcp_msg_reverse COMMAND ${FLOWBENCH_WRAP
 add_test(NAME flowbench/throughput_rpc2_tcp_msg_bidirectional COMMAND ${FLOWBENCH_WRAP} ${FLOWBENCH_RUN} ${FLOWBENCH_BIN} 
         "-f evpl_rpc2 -Q -t throughput -m msg -s 1m -p tcp -d 5 -B"
         "-f evpl_rpc2 -Q -t throughput -m msg -s 1m -p tcp -d 5 -B -a 127.0.0.1:32500")
+add_executable(flowbench_statwindow statwindow.c)
+add_test(NAME flowbench/statwindow COMMAND flowbench_statwindow)
+
+add_test(NAME flowbench/pingpong_udp_msg COMMAND ${FLOWBENCH_WRAP} ${FLOWBENCH_RUN} ${FLOWBENCH_BIN}
+        "-Q -t pingpong -m msg -p udp -q 1 -d 1 -s 4k -l 127.0.0.1:32500"
+        "-Q -t pingpong -m msg -p udp -q 1 -d 1 -s 4k -l 127.0.0.1:32501 -a 127.0.0.1:32500")
+
+add_test(NAME flowbench/throughput_tcp_multithread COMMAND ${FLOWBENCH_WRAP} ${FLOWBENCH_RUN} ${FLOWBENCH_BIN}
+        "-Q -t throughput -m msg -p tcp -d 1 -P 2"
+        "-Q -t throughput -m msg -p tcp -d 1 -P 2 -n 2 -a 127.0.0.1:32500")
+
+
+get_property(flowbench_tests DIRECTORY PROPERTY TESTS)
+set_tests_properties(${flowbench_tests} PROPERTIES TIMEOUT 60)
+if(NOT LIBEVPL_NETNS_TESTING)
+    # Direct loopback tests share a port on macOS and unprivileged Linux.
+    set_tests_properties(${flowbench_tests} PROPERTIES RESOURCE_LOCK flowbench_port)
+endif()

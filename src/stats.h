@@ -137,7 +137,7 @@ flowbench_remove_flow(
 static inline void
 flowbench_flow_add_recv_bytes(
     struct flowbench_flow *flow,
-    struct timespec       *now,
+    uint64_t               now,
     uint64_t               bytes)
 {
     flow->recv_bytes += bytes;
@@ -147,7 +147,7 @@ flowbench_flow_add_recv_bytes(
 static inline void
 flowbench_flow_add_sent_bytes(
     struct flowbench_flow *flow,
-    struct timespec       *now,
+    uint64_t               now,
     uint64_t               bytes)
 {
     flow->sent_bytes += bytes;
@@ -157,7 +157,7 @@ flowbench_flow_add_sent_bytes(
 static inline void
 flowbench_flow_add_recv_msgs(
     struct flowbench_flow *flow,
-    struct timespec       *now,
+    uint64_t               now,
     uint64_t               msgs)
 {
     flow->recv_msgs += msgs;
@@ -167,7 +167,7 @@ flowbench_flow_add_recv_msgs(
 static inline void
 flowbench_flow_add_sent_msgs(
     struct flowbench_flow *flow,
-    struct timespec       *now,
+    uint64_t               now,
     uint64_t               msgs)
 {
     flow->sent_msgs += msgs;

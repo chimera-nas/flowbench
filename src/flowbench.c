@@ -68,7 +68,7 @@ main(
     void                       *framework_private;
     char                       *ch;
     int                         opt;
-    struct timespec             start_time, end_time, now;
+    uint64_t                    start_time, end_time, now;
     uint64_t                    elapsed;
 
     signal(SIGINT, sigint_handler);
@@ -218,6 +218,7 @@ main(
         return 1;
     }
 
+    flowbench_clock_init();
     memset(&stats, 0, sizeof(stats));
 
     pthread_mutex_init(&stats.lock, NULL);
@@ -272,13 +273,13 @@ main(
 
             fprintf(stderr, "Begin measurement...\n");
 
-            clock_gettime(CLOCK_MONOTONIC, &start_time);
+            start_time = flowbench_now_ns();
             flowbench_clear_stats(&stats);
 
             do {
-                clock_gettime(CLOCK_MONOTONIC, &now);
+                now = flowbench_now_ns();
 
-                elapsed = ts_interval(&now, &start_time);
+                elapsed = flowbench_interval_ns(now, start_time);
 
                 if (config.interactive) {
                     ui_update(&stats);
@@ -290,9 +291,9 @@ main(
 
             framework->stop(framework_private);
 
-            clock_gettime(CLOCK_MONOTONIC, &end_time);
+            end_time = flowbench_now_ns();
 
-            elapsed = ts_interval(&end_time, &start_time);
+            elapsed = flowbench_interval_ns(end_time, start_time);
 
             if (config.interactive) {
                 ui_cleanup();

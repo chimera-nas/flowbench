@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: LGPL-2.1-only
 
-#include <ncurses.h>
+#include <curses.h>
+#include <inttypes.h>
+#include "timing.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -27,7 +29,7 @@ ui_format_size(
         size /= 1000;
         unit++;
     }
-    sprintf(out, "%.2f %s", size, units[unit]);
+    snprintf(out, 20, "%.2f %s", size, units[unit]);
 } /* ui_format_size */
 
 // Helper to format throughput in bits per second
@@ -45,7 +47,7 @@ ui_format_throughput(
         bits_per_sec /= 1000;
         unit++;
     }
-    sprintf(out, "%.2f %s", bits_per_sec, units[unit]);
+    snprintf(out, 20, "%.2f %s", bits_per_sec, units[unit]);
 } /* ui_format_throughput */
 
 // Helper to format operations per second
@@ -64,7 +66,7 @@ ui_format_ops_per_second(
         ops_per_sec /= 1000;
         unit++;
     }
-    sprintf(out, "%.2f %s", ops_per_sec, units[unit]);
+    snprintf(out, 20, "%.2f %s", ops_per_sec, units[unit]);
 } /* ui_format_ops_per_second */
 
 void
@@ -72,7 +74,7 @@ display_flow_stats(
     int                    x,
     int                    y,
     struct flowbench_flow *flow,
-    struct timespec       *now)
+    uint64_t               now)
 {
     char     sent_size[20], recv_size[20], send_rate[20], recv_rate[20];
     uint64_t sent_count, recv_count;
@@ -186,9 +188,9 @@ update_screen(struct flowbench_stats *stats)
 
     int                    y;
 
-    struct timespec        now;
+    uint64_t               now;
 
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    now = flowbench_now_ns();
 
     pthread_mutex_lock(&stats->lock);
 
@@ -197,7 +199,7 @@ update_screen(struct flowbench_stats *stats)
     y = 5;
     DL_FOREACH(stats->flows, flow)
     {
-        display_flow_stats(4, y, flow, &now);
+        display_flow_stats(4, y, flow, now);
         y++;
     }
 
@@ -251,7 +253,7 @@ ui_print_flow(
 
     if (flow->total_latency > 0) {
         uint64_t avg_latency = flow->total_latency / flow->recv_msgs;
-        printf(" | Latency: Min: %luns, Max: %luns, Avg: %luns",
+        printf(" | Latency: Min: %" PRIu64 "ns, Max: %" PRIu64 "ns, Avg: %" PRIu64 "ns",
                flow->min_latency, flow->max_latency, avg_latency);
     }
 

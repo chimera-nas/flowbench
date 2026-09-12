@@ -36,7 +36,7 @@ struct flowbench_evpl_flow {
     uint64_t                     inflight_msgs;
     uint64_t                     inflight_bytes;
     uint64_t                     inflight_pings;
-    struct timespec             *ping_times;
+    uint64_t                    *ping_times;
     int                         *ping_slots;
     int                          ping_head;
     int                          ping_tail;
@@ -153,12 +153,12 @@ rpc2_recv_call_datagram_callback(
     struct flowbench_evpl_state  *state  = flow->state;
     struct flowbench_evpl_shared *shared = state->shared;
     int                           rc;
-    struct timespec               now;
+    uint64_t                      now;
 
-    evpl_get_hf_monotonic_time(evpl, &now);
+    now = flowbench_now_ns();
 
-    flowbench_flow_add_recv_bytes(&flow->stats, &now, request->data.length);
-    flowbench_flow_add_recv_msgs(&flow->stats, &now, 1);
+    flowbench_flow_add_recv_bytes(&flow->stats, now, request->data.length);
+    flowbench_flow_add_recv_msgs(&flow->stats, now, 1);
 
     evpl_rpc2_encoding_take_read_chunk(encoding, NULL, NULL);
     evpl_iovecs_release(evpl, request->data.iov, request->data.niov);
@@ -184,19 +184,19 @@ rpc2_recv_reply_pingpong_callback(
 {
     struct flowbench_evpl_flow  *flow  = private_data;
     struct flowbench_evpl_state *state = flow->state;
-    struct timespec              now;
+    uint64_t                     now;
 
-    evpl_get_hf_monotonic_time(evpl, &now);
+    now = flowbench_now_ns();
 
     if (unlikely(status)) {
         fprintf(stderr, "Received error procedure reply for pingpong: %d\n", status);
         return;
     }
 
-    flowbench_flow_add_sent_bytes(&flow->stats, &now, reply->data.length);
-    flowbench_flow_add_sent_msgs(&flow->stats, &now, 1);
-    flowbench_flow_add_recv_bytes(&flow->stats, &now, reply->data.length);
-    flowbench_flow_add_recv_msgs(&flow->stats, &now, 1);
+    flowbench_flow_add_sent_bytes(&flow->stats, now, reply->data.length);
+    flowbench_flow_add_sent_msgs(&flow->stats, now, 1);
+    flowbench_flow_add_recv_bytes(&flow->stats, now, reply->data.length);
+    flowbench_flow_add_recv_msgs(&flow->stats, now, 1);
     flow->inflight_bytes -= reply->data.length;
     flow->inflight_msgs  -= 1;
     flow->inflight_pings--;
@@ -205,7 +205,7 @@ rpc2_recv_reply_pingpong_callback(
 
     if (flow->ping_slots[flow->ping_tail]) {
         flowbench_flow_add_latency(&flow->stats,
-                                   ts_interval(&now, &flow->ping_times[flow->ping_tail]));
+                                   flowbench_interval_ns(now, flow->ping_times[flow->ping_tail]));
         flow->ping_slots[flow->ping_tail] = 0;
         flow->ping_tail                   = (flow->ping_tail + 1) & flow->ping_ring_mask;
     }
@@ -226,17 +226,17 @@ rpc2_recv_reply_datagram_callback(
     struct flowbench_evpl_state   *state  = flow->state;
     struct flowbench_evpl_shared  *shared = state->shared;
     const struct flowbench_config *config = shared->config;
-    struct timespec                now;
+    uint64_t                       now;
 
-    evpl_get_hf_monotonic_time(evpl, &now);
+    now = flowbench_now_ns();
 
     if (unlikely(status)) {
         fprintf(stderr, "Received error procedure reply for datagram: %d\n", status);
         return;
     }
 
-    flowbench_flow_add_sent_bytes(&flow->stats, &now, config->msg_size);
-    flowbench_flow_add_sent_msgs(&flow->stats, &now, 1);
+    flowbench_flow_add_sent_bytes(&flow->stats, now, config->msg_size);
+    flowbench_flow_add_sent_msgs(&flow->stats, now, 1);
     flow->inflight_bytes -= config->msg_size;
     flow->inflight_msgs  -= 1;
     evpl_defer(evpl, &flow->dispatch);
@@ -271,7 +271,7 @@ rpc2_flow_dispatch_callback(
         evpl_iovec_clone(&send_iov, &state->iovec);
 
         if (config->test == FLOWBENCH_TEST_PINGPONG) {
-            evpl_get_hf_monotonic_time(evpl, &flow->ping_times[flow->ping_head]);
+            flow->ping_times[flow->ping_head] = flowbench_now_ns();
             flow->ping_slots[flow->ping_head] = 1;
             flow->ping_head                   = (flow->ping_head + 1) & flow->ping_ring_mask;
             flow->inflight_pings++;
@@ -344,7 +344,7 @@ rpc2_create_flow(
             ping_ring_size <<= 1;
         }
 
-        flow->ping_times     = calloc(ping_ring_size, sizeof(struct timespec));
+        flow->ping_times     = calloc(ping_ring_size, sizeof(uint64_t));
         flow->ping_slots     = calloc(ping_ring_size, sizeof(int));
         flow->ping_ring_mask = ping_ring_size - 1;
         flow->ping_head      = 0;

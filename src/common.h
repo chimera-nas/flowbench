@@ -6,16 +6,12 @@
 
 #include <stdint.h>
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
+#include "timing.h"
 
 #define NS_PER_S (1000000000LL)
-
-static int64_t
-ts_interval(
-    const struct timespec *end,
-    const struct timespec *start)
-{
-    return NS_PER_S * (end->tv_sec - start->tv_sec) + (end->tv_nsec - start->tv_nsec);
-} /* ts_interval */
 
 static void
 format_throughput(
