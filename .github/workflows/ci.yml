@@ -52,7 +52,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build flex bison libncurses-dev libnuma-dev libssl-dev uthash-dev
+          sudo apt-get install -y cmake ninja-build flex bison libncurses-dev libnuma-dev libssl-dev uthash-dev libcurl4-openssl-dev
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: brew install cmake ninja openssl@3 uthash

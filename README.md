@@ -35,7 +35,7 @@ Homebrew dependencies:
 
 On Debian/Ubuntu:
 
-    sudo apt-get install build-essential cmake ninja-build flex bison libncurses-dev libnuma-dev libssl-dev uthash-dev
+    sudo apt-get install build-essential cmake ninja-build flex bison libncurses-dev libnuma-dev libssl-dev uthash-dev libcurl4-openssl-dev
 
 Build and run Flowbench's tests:
 
