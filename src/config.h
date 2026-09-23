@@ -63,6 +63,11 @@ struct flowbench_config {
     uint64_t    max_inflight;
     uint64_t    max_inflight_bytes;
     uint64_t    duration;
+    /* io_uring zero-copy receive: NULL interface leaves ZCRX off. */
+    const char *zcrx_interface;
+    int         zcrx_rxq;
+    int         zcrx_buf_len;
+    int         send_zc;
 };
 
 static enum flowbench_framework_id

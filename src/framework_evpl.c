@@ -420,6 +420,28 @@ flowbench_evpl_init(
     evpl_global_config_set_max_datagram_size(evpl_config, config->msg_size);
     evpl_global_config_set_tls_verify_peer(evpl_config, 0);
 
+    /* Zero-copy receive is opt-in: ON demands the kernel and driver support it
+     * and fails loudly otherwise, which is what a benchmark wants.  Without -z
+     * it is forced off so an io_uring run is a clean non-ZCRX baseline rather
+     * than whatever the library would auto-detect. */
+    if (config->zcrx_interface) {
+        evpl_global_config_set_io_uring_zerocopy_rx(evpl_config, EVPL_IO_URING_ON);
+        evpl_global_config_set_io_uring_zcrx_interface(evpl_config, config->zcrx_interface);
+        evpl_global_config_set_io_uring_zcrx_rxq(evpl_config, config->zcrx_rxq);
+        if (config->zcrx_buf_len) {
+            evpl_global_config_set_io_uring_zcrx_rx_buf_len(evpl_config,
+                                                            config->zcrx_buf_len);
+        }
+    } else {
+        evpl_global_config_set_io_uring_zerocopy_rx(evpl_config, EVPL_IO_URING_OFF);
+    }
+
+    /* Zero-copy send is off unless asked for: it trades the payload copy for
+     * pinned pages and a deferred completion, which only wins on large sends. */
+    evpl_global_config_set_io_uring_send_zc(
+        evpl_config,
+        config->send_zc ? EVPL_IO_URING_ON : EVPL_IO_URING_OFF);
+
     evpl_init(evpl_config);
 
     shared->config = config;
