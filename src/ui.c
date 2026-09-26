@@ -266,5 +266,25 @@ ui_print_stats(
     struct flowbench_stats *stats,
     uint64_t                duration)
 {
-    ui_print_flow(&stats->saved, duration);
+    struct flowbench_flow  summary = stats->saved;
+    struct flowbench_flow *flow;
+
+    /* Flows still open have not been folded into the saved totals, and the
+     * caller may well print before closing them, so sum them here the same
+     * way the interactive display does. */
+    DL_FOREACH(stats->flows, flow)
+    {
+        summary.sent_msgs  += flow->sent_msgs;
+        summary.sent_bytes += flow->sent_bytes;
+        summary.recv_msgs  += flow->recv_msgs;
+        summary.recv_bytes += flow->recv_bytes;
+        summary.min_latency = flow->min_latency < summary.min_latency ||
+            summary.min_latency == 0 ? flow->min_latency : summary.min_latency;
+        summary.max_latency = flow->max_latency > summary.max_latency ?
+            flow->max_latency : summary.max_latency;
+        summary.total_latency   += flow->total_latency;
+        summary.latency_samples += flow->latency_samples;
+    }
+
+    ui_print_flow(&summary, duration);
 } /* ui_print_stats */

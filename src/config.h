@@ -66,6 +66,7 @@ struct flowbench_config {
     /* io_uring zero-copy receive: NULL interface leaves ZCRX off. */
     const char *zcrx_interface;
     int         zcrx_rxq;
+    int         zcrx_rxq_count;
     int         zcrx_buf_len;
     int         send_zc;
 };

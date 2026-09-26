@@ -54,11 +54,12 @@ print_usage(const char *program_name)
             "  -s size           Message size (default: 65536)\n"
             "  -t test           Test type (default: throughput)\n"
             "  -Z                Enable io_uring zero-copy send (SEND_ZC)\n"
-            "  -z iface[:rxq[:buflen]]\n"
+            "  -z iface[:rxq[-rxq_last][:buflen]]\n"
             "                    Enable io_uring zero-copy receive (ZCRX) on iface,\n"
-            "                    optionally pinned to RX queue rxq (default: 0) with a\n"
-            "                    receive buffer size of buflen bytes (default: page size).\n"
-            "                    Steer the test flow to that queue (ethtool -N).\n"
+            "                    on RX queue rxq (default: 0) or the range rxq-rxq_last,\n"
+            "                    one ifq per queue, with a receive buffer size of buflen\n"
+            "                    bytes (default: page size). Steer the test flows to\n"
+            "                    those queues (ethtool -N, or ethtool -X start/equal).\n"
             "  -v                Show version\n", program_name);
 } /* print_usage */
 
@@ -101,6 +102,7 @@ main(
     config.huge_pages         = 0;
     config.zcrx_interface     = NULL;
     config.zcrx_rxq           = 0;
+    config.zcrx_rxq_count     = 1;
     config.zcrx_buf_len       = 0;
     config.send_zc            = 0;
     while ((opt = getopt(argc, argv, "a:Bd:f:hHl:m:n:r:Rp:P:q:Qs:t:vZz:")) != -1) {
@@ -224,7 +226,17 @@ main(
                         config.zcrx_buf_len = (int) zcrx_buf_len;
                     }
 
-                    config.zcrx_rxq = atoi(ch + 1);
+                    {
+                        /* rxq or rxq_first-rxq_last */
+                        char *dash = index(ch + 1, '-');
+
+                        config.zcrx_rxq       = atoi(ch + 1);
+                        config.zcrx_rxq_count = 1;
+
+                        if (dash && atoi(dash + 1) >= config.zcrx_rxq) {
+                            config.zcrx_rxq_count = atoi(dash + 1) - config.zcrx_rxq + 1;
+                        }
+                    }
                 }
 
                 config.zcrx_interface = optarg;
@@ -328,8 +340,11 @@ main(
 
             } while (elapsed < config.duration && !SigInt);
 
-            framework->stop(framework_private);
-
+            /* The measurement is over once the loop exits, so report it
+             * before tearing the framework down: the numbers are complete,
+             * and a transport that misbehaves while closing (XLIO's keepalive
+             * timer has been seen to fault during teardown) must not take the
+             * results with it. */
             end_time = flowbench_now_ns();
 
             elapsed = flowbench_interval_ns(end_time, start_time);
@@ -339,6 +354,9 @@ main(
             }
 
             ui_print_stats(&stats, elapsed);
+            fflush(stdout);
+
+            framework->stop(framework_private);
 
             break;
         default:
