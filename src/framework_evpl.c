@@ -22,6 +22,9 @@
 #define unlikely(x) __builtin_expect(!!(x), 0)
 #endif /* unlikely */
 
+/* Distinct send buffers per flow; power of two so the cursor can mask. */
+#define FLOWBENCH_SEND_POOL 64
+
 struct flowbench_evpl_flow {
     struct evpl_bind            *bind;
     struct flowbench_flow        stats;
@@ -37,7 +40,13 @@ struct flowbench_evpl_flow {
     int                          ping_tail;
     int                          ping_ring_mask;
     int                          connected;
-    struct evpl_iovec            iovec;
+    /* A pool of distinct send buffers, cycled through rather than resending one
+     * buffer forever.  Reusing a single buffer is unrepresentative for a
+     * zero-copy send, where the NIC reads the application's pages directly and
+     * every operation in flight holds a reference on the same few page
+     * structs. */
+    struct evpl_iovec            iovec[FLOWBENCH_SEND_POOL];
+    int                          iovec_index;
 };
 
 struct flowbench_evpl_state {
@@ -64,7 +73,9 @@ struct flowbench_evpl_shared {
 void
 close_flow(struct flowbench_evpl_flow *flow)
 {
-    evpl_iovec_release(flow->state->evpl, &flow->iovec);
+    for (int i = 0; i < FLOWBENCH_SEND_POOL; i++) {
+        evpl_iovec_release(flow->state->evpl, &flow->iovec[i]);
+    }
     if (flow->ping_times) {
         free(flow->ping_times);
     }
@@ -141,7 +152,8 @@ flow_dispatch_callback(
             flow->inflight_pings++;
         }
 
-        evpl_iovec_clone(&send_iov, &flow->iovec);
+        evpl_iovec_clone(&send_iov, &flow->iovec[flow->iovec_index]);
+        flow->iovec_index = (flow->iovec_index + 1) & (FLOWBENCH_SEND_POOL - 1);
 
         if (shared->connected) {
             evpl_sendv(evpl, flow->bind, &send_iov, 1, config->msg_size, EVPL_SEND_FLAG_TAKE_REF);
@@ -219,7 +231,7 @@ notify_callback(
 
                 } else {
                     struct evpl_iovec send_iov;
-                    evpl_iovec_clone(&send_iov, &flow->iovec);
+                    evpl_iovec_clone(&send_iov, &flow->iovec[0]);
                     if (shared->connected) {
                         evpl_sendv(evpl, flow->bind, &send_iov, 1, notify->recv_msg.length, EVPL_SEND_FLAG_TAKE_REF);
                     } else {
@@ -252,6 +264,7 @@ create_flow(
     struct flowbench_evpl_shared *shared = state->shared;
     struct flowbench_config      *config = shared->config;
     int                           ping_ring_size;
+    int                           i;
 
     flow = calloc(1, sizeof(*flow));
 
@@ -274,7 +287,12 @@ create_flow(
         flow->ping_tail      = 0;
     }
 
-    evpl_iovec_alloc(state->evpl, config->msg_size, 4096, 1, 0, &flow->iovec);
+    for (i = 0; i < FLOWBENCH_SEND_POOL; i++) {
+        evpl_iovec_alloc(state->evpl, config->msg_size, 4096, 1, 0,
+                         &flow->iovec[i]);
+    }
+
+    flow->iovec_index = 0;
 
     flowbench_add_flow(state->stats, &flow->stats);
 
@@ -419,6 +437,30 @@ flowbench_evpl_init(
     evpl_global_config_set_rdmacm_srq_prefill(evpl_config, 1);
     evpl_global_config_set_max_datagram_size(evpl_config, config->msg_size);
     evpl_global_config_set_tls_verify_peer(evpl_config, 0);
+
+    /* Zero-copy receive is opt-in: ON demands the kernel and driver support it
+     * and fails loudly otherwise, which is what a benchmark wants.  Without -z
+     * it is forced off so an io_uring run is a clean non-ZCRX baseline rather
+     * than whatever the library would auto-detect. */
+    if (config->zcrx_interface) {
+        evpl_global_config_set_io_uring_zerocopy_rx(evpl_config, EVPL_IO_URING_ON);
+        evpl_global_config_set_io_uring_zcrx_interface(evpl_config, config->zcrx_interface);
+        evpl_global_config_set_io_uring_zcrx_rxq(evpl_config, config->zcrx_rxq);
+        evpl_global_config_set_io_uring_zcrx_ifq_count(evpl_config,
+                                                       config->zcrx_rxq_count > 0 ? config->zcrx_rxq_count : 1);
+        if (config->zcrx_buf_len) {
+            evpl_global_config_set_io_uring_zcrx_rx_buf_len(evpl_config,
+                                                            config->zcrx_buf_len);
+        }
+    } else {
+        evpl_global_config_set_io_uring_zerocopy_rx(evpl_config, EVPL_IO_URING_OFF);
+    }
+
+    /* Zero-copy send is off unless asked for: it trades the payload copy for
+     * pinned pages and a deferred completion, which only wins on large sends. */
+    evpl_global_config_set_io_uring_send_zc(
+        evpl_config,
+        config->send_zc ? EVPL_IO_URING_ON : EVPL_IO_URING_OFF);
 
     evpl_init(evpl_config);
 
