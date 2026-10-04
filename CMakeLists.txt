@@ -43,6 +43,15 @@ include_directories(3rdparty)
 
 add_subdirectory(ext)
 
+# When libevpl is built with SPDK, it attaches SPDK constructor-only modules to
+# the evpl target via a custom link-library feature (keeping them under
+# --no-as-needed). That feature is defined in libevpl's own directory scope, so
+# it must be mirrored here or CMake rejects it as unsupported for C when the
+# flowbench target inherits the generator expression. Harmless when SPDK is off.
+set(CMAKE_C_LINK_LIBRARY_USING_evpl_spdk_modules_SUPPORTED TRUE)
+set(CMAKE_C_LINK_LIBRARY_USING_evpl_spdk_modules
+    "LINKER:--push-state,--no-as-needed" "<LINK_ITEM>" "LINKER:--pop-state")
+
 add_definitions(-DXDR_CUSTOM_IOVEC=${CMAKE_CURRENT_SOURCE_DIR}/ext/libevpl/src/rpc2/xdr_iovec.h)
 add_subdirectory(src)
 

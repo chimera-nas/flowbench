@@ -23,7 +23,6 @@
 #endif /* unlikely */
 
 /* Distinct send buffers per flow; power of two so the cursor can mask. */
-#define FLOWBENCH_SEND_POOL 64
 
 struct flowbench_evpl_flow {
     struct evpl_bind            *bind;
@@ -40,13 +39,6 @@ struct flowbench_evpl_flow {
     int                          ping_tail;
     int                          ping_ring_mask;
     int                          connected;
-    /* A pool of distinct send buffers, cycled through rather than resending one
-     * buffer forever.  Reusing a single buffer is unrepresentative for a
-     * zero-copy send, where the NIC reads the application's pages directly and
-     * every operation in flight holds a reference on the same few page
-     * structs. */
-    struct evpl_iovec            iovec[FLOWBENCH_SEND_POOL];
-    int                          iovec_index;
 };
 
 struct flowbench_evpl_state {
@@ -68,14 +60,12 @@ struct flowbench_evpl_shared {
     struct evpl_endpoint        *local;
     struct evpl_endpoint        *remote;
     struct evpl_listener        *listener;
+    struct evpl_thread_config   *thread_config;
 };
 
 void
 close_flow(struct flowbench_evpl_flow *flow)
 {
-    for (int i = 0; i < FLOWBENCH_SEND_POOL; i++) {
-        evpl_iovec_release(flow->state->evpl, &flow->iovec[i]);
-    }
     if (flow->ping_times) {
         free(flow->ping_times);
     }
@@ -152,8 +142,7 @@ flow_dispatch_callback(
             flow->inflight_pings++;
         }
 
-        evpl_iovec_clone(&send_iov, &flow->iovec[flow->iovec_index]);
-        flow->iovec_index = (flow->iovec_index + 1) & (FLOWBENCH_SEND_POOL - 1);
+        evpl_iovec_alloc(evpl, config->msg_size, 4096, 1, 0, &send_iov);
 
         if (shared->connected) {
             evpl_sendv(evpl, flow->bind, &send_iov, 1, config->msg_size, EVPL_SEND_FLAG_TAKE_REF);
@@ -231,7 +220,7 @@ notify_callback(
 
                 } else {
                     struct evpl_iovec send_iov;
-                    evpl_iovec_clone(&send_iov, &flow->iovec[0]);
+                    evpl_iovec_alloc(evpl, notify->recv_msg.length, 4096, 1, 0, &send_iov);
                     if (shared->connected) {
                         evpl_sendv(evpl, flow->bind, &send_iov, 1, notify->recv_msg.length, EVPL_SEND_FLAG_TAKE_REF);
                     } else {
@@ -264,7 +253,6 @@ create_flow(
     struct flowbench_evpl_shared *shared = state->shared;
     struct flowbench_config      *config = shared->config;
     int                           ping_ring_size;
-    int                           i;
 
     flow = calloc(1, sizeof(*flow));
 
@@ -287,12 +275,6 @@ create_flow(
         flow->ping_tail      = 0;
     }
 
-    for (i = 0; i < FLOWBENCH_SEND_POOL; i++) {
-        evpl_iovec_alloc(state->evpl, config->msg_size, 4096, 1, 0,
-                         &flow->iovec[i]);
-    }
-
-    flow->iovec_index = 0;
 
     flowbench_add_flow(state->stats, &flow->stats);
 
@@ -434,6 +416,15 @@ flowbench_evpl_init(
     }
 
     evpl_global_config_set_rdmacm_tos(evpl_config, 104);
+    if (config->rdma_recv_depth > 0) {
+        evpl_global_config_set_rdmacm_srq_size(evpl_config, config->rdma_recv_depth);
+        evpl_global_config_set_libfabric_rq_size(evpl_config, config->rdma_recv_depth);
+    }
+    if (config->rdma_max_sge > 0) {
+        evpl_global_config_set_rdmacm_max_sge(evpl_config, config->rdma_max_sge);
+        evpl_global_config_set_rdmacm_max_inline(evpl_config, 0);
+    }
+    evpl_global_config_set_rdmacm_flush_batch(evpl_config, config->rdma_flush_batch);
     evpl_global_config_set_rdmacm_srq_prefill(evpl_config, 1);
     evpl_global_config_set_max_datagram_size(evpl_config, config->msg_size);
     evpl_global_config_set_tls_verify_peer(evpl_config, 0);
@@ -461,6 +452,27 @@ flowbench_evpl_init(
     evpl_global_config_set_io_uring_send_zc(
         evpl_config,
         config->send_zc ? EVPL_IO_URING_ON : EVPL_IO_URING_OFF);
+    if (config->send_zc_threshold >= 0) {
+        evpl_global_config_set_io_uring_send_zc_threshold(evpl_config, config->send_zc_threshold);
+    }
+
+    /* Provider/backend selection for the libfabric and SPDK stream protocols. */
+    switch (config->protocol) {
+        case FLOWBENCH_PROTO_LIBFABRIC_TCP:
+            evpl_global_config_set_libfabric_provider(evpl_config, "tcp");
+            break;
+        case FLOWBENCH_PROTO_LIBFABRIC_VERBS:
+            evpl_global_config_set_libfabric_provider(evpl_config, "verbs");
+            break;
+        case FLOWBENCH_PROTO_SPDK_TCP:
+        case FLOWBENCH_PROTO_SPDK_IO_URING_TCP:
+            /* SPDK sock runs on an SPDK reactor; the workers get a matching
+             * per-thread core_mech and cpumask in flowbench_evpl_start. */
+            evpl_global_config_set_core_mech(evpl_config, EVPL_CORE_MECH_SPDK);
+            break;
+        default:
+            break;
+    } /* switch */
 
     evpl_init(evpl_config);
 
@@ -533,6 +545,22 @@ flowbench_evpl_start(void *private_data)
                     shared->stream    = 1;
                     shared->connected = 1;
                     break;
+                case FLOWBENCH_PROTO_LIBFABRIC_TCP:
+                case FLOWBENCH_PROTO_LIBFABRIC_VERBS:
+                    shared->protocol  = EVPL_STREAM_LIBFABRIC_MSG;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_SPDK_TCP:
+                    shared->protocol  = EVPL_STREAM_SPDK_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_SPDK_IO_URING_TCP:
+                    shared->protocol  = EVPL_STREAM_SPDK_TCP_URING;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
                 default:
                     fprintf(stderr, "Unsupported protocol %d\n", config->protocol);
                     exit(1);
@@ -576,6 +604,22 @@ flowbench_evpl_start(void *private_data)
                     shared->stream    = 1;
                     shared->connected = 1;
                     break;
+                case FLOWBENCH_PROTO_LIBFABRIC_TCP:
+                case FLOWBENCH_PROTO_LIBFABRIC_VERBS:
+                    shared->protocol  = EVPL_STREAM_LIBFABRIC_MSG;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_SPDK_TCP:
+                    shared->protocol  = EVPL_STREAM_SPDK_TCP;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
+                case FLOWBENCH_PROTO_SPDK_IO_URING_TCP:
+                    shared->protocol  = EVPL_STREAM_SPDK_TCP_URING;
+                    shared->stream    = 1;
+                    shared->connected = 1;
+                    break;
                 default:
                     fprintf(stderr, "Unsupported protocol %d\n", config->protocol);
                     exit(1);
@@ -591,11 +635,25 @@ flowbench_evpl_start(void *private_data)
     shared->local  = evpl_endpoint_create(config->local, config->local_port);
     shared->remote = evpl_endpoint_create(config->peer, config->peer_port);
 
+    if (config->protocol == FLOWBENCH_PROTO_SPDK_TCP ||
+        config->protocol == FLOWBENCH_PROTO_SPDK_IO_URING_TCP ||
+        config->poll_mode == 0) {
+        shared->thread_config = evpl_thread_config_init();
+        if (config->protocol == FLOWBENCH_PROTO_SPDK_TCP ||
+            config->protocol == FLOWBENCH_PROTO_SPDK_IO_URING_TCP) {
+            evpl_thread_config_set_core_mech(shared->thread_config, EVPL_CORE_MECH_SPDK);
+            evpl_thread_config_set_spdk_cpumask(shared->thread_config, config->spdk_cpumask);
+        }
+        if (config->poll_mode == 0) {
+            evpl_thread_config_set_poll_mode(shared->thread_config, 0);
+        }
+    }
+
     for (i = 0; i < config->num_threads; ++i) {
 
         state = &shared->states[i];
 
-        state->thread = evpl_thread_create(NULL,
+        state->thread = evpl_thread_create(shared->thread_config,
                                            flowbench_evpl_thread_init,
                                            flowbench_evpl_thread_destroy,
                                            state);
@@ -617,6 +675,11 @@ flowbench_evpl_stop(void *private_data)
 
     for (i = 0; i < config->num_threads; ++i) {
         evpl_thread_destroy(shared->states[i].thread);
+    }
+
+    if (shared->thread_config) {
+        evpl_thread_config_release(shared->thread_config);
+        shared->thread_config = NULL;
     }
 } /* flowbench_evpl_stop */
 

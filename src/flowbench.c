@@ -38,14 +38,22 @@ print_usage(const char *program_name)
             "Options:\n"
             "  -a addr[:port]    Peer address and optional port (default: 127.0.0.1:32500)\n"
             "  -B                Enable bidirectional mode\n"
+            "  -C cpumask        SPDK reactor CPU mask for spdk_* protocols (default: [0])\n"
+            "  -E                Event/wait mode (default: busy poll)\n"
+            "  -F batch          Max RDMA CM sends posted per flush; 0 = unbounded (default: 16)\n"
+            "  -G max_sge        RDMA send max_sge (also disables inline); 0 = libevpl default\n"
+            "  -S depth          RDMA recv queue depth (SRQ/RQ); 0 = libevpl default\n"
             "  -d seconds        Test duration in seconds (default: 10)\n"
             "  -f framework      Framework to use (default: evpl)\n"
             "  -h                Print help\n"
+            "  -k bytes          io_uring SEND_ZC size threshold; -1 = libevpl default\n"
             "  -H                Use huge pages\n"
             "  -l addr[:port]    Local address and optional port (default: 0.0.0.0:32500)\n"
             "  -m mode           Mode (default: msg)\n"
             "  -n num_flows      Number of flows (default: 1)\n"
-            "  -p protocol       Protocol (default: tcp)\n"
+            "  -p protocol       Protocol (default: tcp): tcp, udp, tls, io_uring_tcp, xlio_tcp,\n"
+            "                    rdmacm_rc, rdmacm_ud, libfabric_tcp, libfabric_verbs,\n"
+            "                    spdk_tcp, spdk_io_uring_tcp\n"
             "  -P num_threads    Number of threads (default: 1)\n"
             "  -q max_inflight   Maximum inflight data (# msgs in MSG mode, # bytes in STREAM mode) (default: 64/4MB)\n"
             "  -Q                Quiet mode (disable interactive display)\n"
@@ -105,7 +113,13 @@ main(
     config.zcrx_rxq_count     = 1;
     config.zcrx_buf_len       = 0;
     config.send_zc            = 0;
-    while ((opt = getopt(argc, argv, "a:Bd:f:hHl:m:n:r:Rp:P:q:Qs:t:vZz:")) != -1) {
+    config.send_zc_threshold  = -1;
+    config.spdk_cpumask       = "[0]";
+    config.poll_mode          = 1;
+    config.rdma_recv_depth    = 0;
+    config.rdma_max_sge       = 0;
+    config.rdma_flush_batch   = 16;
+    while ((opt = getopt(argc, argv, "a:Bd:f:hHl:m:n:r:Rp:P:q:Qs:t:vZz:C:ES:G:F:k:")) != -1) {
         switch (opt) {
             case 'a':
 
@@ -206,6 +220,9 @@ main(
             case 'Z':
                 config.send_zc = 1;
                 break;
+            case 'k':
+                config.send_zc_threshold = atoi(optarg);
+                break;
             case 'z':
 
                 ch = index(optarg, ':');
@@ -240,6 +257,21 @@ main(
                 }
 
                 config.zcrx_interface = optarg;
+                break;
+            case 'C':
+                config.spdk_cpumask = optarg;
+                break;
+            case 'E':
+                config.poll_mode = 0;
+                break;
+            case 'S':
+                config.rdma_recv_depth = atoi(optarg);
+                break;
+            case 'G':
+                config.rdma_max_sge = atoi(optarg);
+                break;
+            case 'F':
+                config.rdma_flush_batch = atoi(optarg);
                 break;
             default:
                 print_usage(argv[0]);
