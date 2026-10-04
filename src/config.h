@@ -26,14 +26,18 @@ enum flowbench_mode {
 };
 
 enum flowbench_protocol {
-    FLOWBENCH_PROTO_INVALID      = 0,
-    FLOWBENCH_PROTO_TCP          = 1,
-    FLOWBENCH_PROTO_UDP          = 2,
-    FLOWBENCH_PROTO_RDMACM_RC    = 3,
-    FLOWBENCH_PROTO_RDMACM_UD    = 4,
-    FLOWBENCH_PROTO_XLIO_TCP     = 5,
-    FLOWBENCH_PROTO_IO_URING_TCP = 6,
-    FLOWBENCH_PROTO_TLS          = 7,
+    FLOWBENCH_PROTO_INVALID           = 0,
+    FLOWBENCH_PROTO_TCP               = 1,
+    FLOWBENCH_PROTO_UDP               = 2,
+    FLOWBENCH_PROTO_RDMACM_RC         = 3,
+    FLOWBENCH_PROTO_RDMACM_UD         = 4,
+    FLOWBENCH_PROTO_XLIO_TCP          = 5,
+    FLOWBENCH_PROTO_IO_URING_TCP      = 6,
+    FLOWBENCH_PROTO_TLS               = 7,
+    FLOWBENCH_PROTO_LIBFABRIC_TCP     = 8,
+    FLOWBENCH_PROTO_LIBFABRIC_VERBS   = 9,
+    FLOWBENCH_PROTO_SPDK_TCP          = 10,
+    FLOWBENCH_PROTO_SPDK_IO_URING_TCP = 11,
 
 };
 
@@ -69,6 +73,13 @@ struct flowbench_config {
     int         zcrx_rxq_count;
     int         zcrx_buf_len;
     int         send_zc;
+    int         send_zc_threshold; /* io_uring send-zc byte threshold; -1 = default */
+    /* SPDK reactor CPU mask, e.g. "[8]"; only used by the spdk_* protocols. */
+    const char *spdk_cpumask;
+    int         poll_mode;   /* 1 = busy poll (default), 0 = event/wait mode */
+    int         rdma_recv_depth; /* RDMA recv queue depth (SRQ/RQ); 0 = libevpl default */
+    int         rdma_max_sge;    /* RDMA send max_sge (also zeros inline); 0 = libevpl default */
+    int         rdma_flush_batch;  /* max RDMA sends posted per poll iteration; 0 = unbounded */
 };
 
 static enum flowbench_framework_id
@@ -141,6 +152,22 @@ map_protocol(const char *name)
 
     if (strcmp(name, "tls") == 0) {
         return FLOWBENCH_PROTO_TLS;
+    }
+
+    if (strcmp(name, "libfabric_tcp") == 0) {
+        return FLOWBENCH_PROTO_LIBFABRIC_TCP;
+    }
+
+    if (strcmp(name, "libfabric_verbs") == 0) {
+        return FLOWBENCH_PROTO_LIBFABRIC_VERBS;
+    }
+
+    if (strcmp(name, "spdk_tcp") == 0) {
+        return FLOWBENCH_PROTO_SPDK_TCP;
+    }
+
+    if (strcmp(name, "spdk_io_uring_tcp") == 0) {
+        return FLOWBENCH_PROTO_SPDK_IO_URING_TCP;
     }
 
     return FLOWBENCH_PROTO_INVALID;
